@@ -70,13 +70,13 @@ The application uses `--dart-define` for environment configuration:
 ### Connecting to a self-hosted server (Community Edition)
 
 Kumiho Browser can connect directly to a self-hosted [Kumiho Server
-Community Edition (CE)](../../kumiho-server) instance — no Firebase sign-in or
-control-plane discovery required.
+Community Edition (CE)](https://github.com/KumihoIO/kumiho-server-community)
+instance — no Firebase sign-in or control-plane discovery required.
 
 CE serves plaintext gRPC on loopback (default `127.0.0.1:9190`) and does not
 require authentication. To connect:
 
-1. Start the CE server (see the kumiho-server docs for Neo4j setup):
+1. Start the CE server (see the [kumiho-server-community](https://github.com/KumihoIO/kumiho-server-community) docs for Neo4j setup):
    ```powershell
    $env:KUMIHO_DEPLOYMENT_MODE = "self_hosted_ce"
    $env:KUMIHO_NEO4J_PORT = "7687"
