@@ -215,12 +215,55 @@ final _projectsCacheAtMsProvider = StateProvider<int?>((ref) => null);
 
 const int _projectsCacheTtlMs = 2 * 60 * 1000;
 
+/// Stable cache for the local / self-hosted (CE) client, kept outside the
+/// provider graph so it can be set during build without tripping Riverpod's
+/// "modify a provider during build" / "didChangeDependency" assertions.
+KumihoClient? _localServerClient;
+String? _localServerSig;
+
 /// Provider for the Kumiho gRPC client
-/// 
+///
 /// The client is created after successful authentication and discovery.
 /// Also supports anonymous browsing with tenant ID from settings.
 /// Returns null if user is not authenticated and no anonymous tenant configured.
 final kumihoClientProvider = FutureProvider<KumihoClient?>((ref) async {
+  // Local / self-hosted (CE) mode: connect directly to a self-hosted Kumiho
+  // server, bypassing Firebase sign-in and control-plane discovery. Resolve it
+  // FIRST — before watching the auth stream — so that in CE mode this provider
+  // depends only on settings and does NOT rebuild on every auth-stream emission
+  // at startup. Each such rebuild re-emits this client future and invalidates
+  // the in-flight projects fetch ("didChangeDependency"), which loops the UI.
+  // CE serves plaintext gRPC on loopback and ignores auth tokens, so there is
+  // no TLS handshake to defer and nothing to discover.
+  final settings = ref.watch(settingsProvider);
+  if (settings.localServerEnabled) {
+    final host = settings.localServerHost;
+    final port = settings.localServerPort;
+    final secure = settings.localServerSecure;
+    final sig = 'local|$host:$port|$secure';
+    // Reuse one stable client. Cache in a module-level variable, NOT the
+    // StateProviders: modifying a provider during this provider's build throws,
+    // and doing it after an await races with the auth stream re-emitting at
+    // startup (which churns the client and loops the projects fetch). A plain
+    // cache sidesteps both.
+    if (_localServerSig == sig && _localServerClient != null) {
+      return _localServerClient;
+    }
+    if (PerfLogger.enabled) {
+      PerfLogger.log('kumihoClientProvider: local/CE mode -> $host:$port secure=$secure');
+    }
+    final client = KumihoClient(
+      host: host,
+      port: port,
+      secure: secure,
+      token: '', // CE ignores auth; empty token avoids env/file auto-load.
+    );
+    _localServerClient = client;
+    _localServerSig = sig;
+    return client;
+  }
+
+  // --- Cloud (Firebase auth + control-plane discovery) path below ---
   // If auth is still resolving at startup, don't start anonymous public
   // discovery yet. Wait until we definitively know whether the user is
   // signed in or signed out.
@@ -235,34 +278,6 @@ final kumihoClientProvider = FutureProvider<KumihoClient?>((ref) async {
 
   final cached = ref.read(_kumihoClientInstanceProvider);
   final cachedSig = ref.read(_kumihoClientSignatureProvider);
-
-  // Local / self-hosted (CE) mode: connect directly to a self-hosted Kumiho
-  // server, bypassing Firebase sign-in and control-plane discovery. CE serves
-  // plaintext gRPC on loopback and ignores auth tokens, so there is no TLS
-  // handshake to defer and nothing to discover — handle it before any of the
-  // cloud bootstrap (including the Windows startup deferral) runs.
-  final settings = ref.watch(settingsProvider);
-  if (settings.localServerEnabled) {
-    final host = settings.localServerHost;
-    final port = settings.localServerPort;
-    final secure = settings.localServerSecure;
-    final sig = 'local|$host:$port|$secure';
-    if (cachedSig == sig && cached != null) {
-      return cached;
-    }
-    if (PerfLogger.enabled) {
-      PerfLogger.log('kumihoClientProvider: local/CE mode -> $host:$port secure=$secure');
-    }
-    final client = KumihoClient(
-      host: host,
-      port: port,
-      secure: secure,
-      token: '', // CE ignores auth; empty token avoids env/file auto-load.
-    );
-    ref.read(_kumihoClientInstanceProvider.notifier).state = client;
-    ref.read(_kumihoClientSignatureProvider.notifier).state = sig;
-    return client;
-  }
 
   // CRITICAL (Windows): do not touch session discovery or Firebase token APIs
   // during the deferred startup window. Even seemingly-async calls like
@@ -620,6 +635,15 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
     final cachedAtMs = ref.watch(_projectsCacheAtMsProvider);
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
+    // Capture the cache controllers up front (before any await) so the write
+    // after the fetch completes does NOT call a ref function. Calling ref after
+    // an await throws "didChangeDependency" if any watched provider notified
+    // mid-fetch — which happens in CE mode, where the loopback fetch returns in
+    // a few ms while startup providers are still settling, leaving the cache
+    // perpetually unwritten and the fetch looping every frame.
+    final projectsCacheCtrl = ref.read(_projectsCacheProvider.notifier);
+    final projectsCacheAtCtrl = ref.read(_projectsCacheAtMsProvider.notifier);
+
     final isCacheFresh = cachedAtMs != null &&
         nowMs - cachedAtMs >= 0 &&
         nowMs - cachedAtMs < _projectsCacheTtlMs;
@@ -766,9 +790,8 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
       // Since projectsProvider watches _projectsCacheProvider, updating it
       // with an empty list would trigger an infinite rebuild loop.
       if (projects.isNotEmpty) {
-        ref.read(_projectsCacheProvider.notifier).state = projects;
-        ref.read(_projectsCacheAtMsProvider.notifier).state =
-            DateTime.now().millisecondsSinceEpoch;
+        projectsCacheCtrl.state = projects;
+        projectsCacheAtCtrl.state = DateTime.now().millisecondsSinceEpoch;
       }
       return projects;
     }
