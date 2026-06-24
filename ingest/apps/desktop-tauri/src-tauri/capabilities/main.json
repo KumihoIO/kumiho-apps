@@ -18,6 +18,8 @@
     "fs:allow-download-read-recursive",
     "fs:allow-picture-read-recursive",
     "fs:allow-video-read-recursive",
-    "ingest-commands"
+    "ingest-commands",
+    "updater:default",
+    "process:default"
   ]
 }

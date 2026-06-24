@@ -32,6 +32,15 @@
     "active": true,
     "targets": "all",
     "resources": ["../../../worker", "../../../python"],
-    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
+    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/KumihoIO/kumiho-apps/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_TAURI_UPDATER_PUBLIC_KEY"
+    }
   }
 }

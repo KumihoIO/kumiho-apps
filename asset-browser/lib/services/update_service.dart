@@ -43,9 +43,9 @@ class UpdateService {
   /// - UPDATE_GITHUB_REPO
   ///
   /// Example:
-  /// flutter build windows --dart-define=UPDATE_GITHUB_OWNER=kumihoclouds --dart-define=UPDATE_GITHUB_REPO=kumiho-browser
-  static const String _owner = String.fromEnvironment('UPDATE_GITHUB_OWNER', defaultValue: 'kumihoclouds');
-  static const String _repo = String.fromEnvironment('UPDATE_GITHUB_REPO', defaultValue: 'kumiho-browser');
+  /// flutter build windows --dart-define=UPDATE_GITHUB_OWNER=KumihoIO --dart-define=UPDATE_GITHUB_REPO=kumiho-apps
+  static const String _owner = String.fromEnvironment('UPDATE_GITHUB_OWNER', defaultValue: 'KumihoIO');
+  static const String _repo = String.fromEnvironment('UPDATE_GITHUB_REPO', defaultValue: 'kumiho-apps');
 
   static Uri get _latestReleaseApi => Uri.parse('https://api.github.com/repos/$_owner/$_repo/releases/latest');
   static Uri get _tagsApi => Uri.parse('https://api.github.com/repos/$_owner/$_repo/tags?per_page=100');

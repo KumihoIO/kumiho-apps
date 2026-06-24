@@ -1,0 +1,262 @@
+name: asset-browser release
+
+# Builds and releases the Kumiho Browser (asset-browser) Flutter desktop app
+# for Windows, macOS and Linux, and publishes a GitHub Release on this repo.
+#
+# Trigger: push a tag like `asset-browser-v1.2.3`.
+#
+# Signing is conditional on repo secrets:
+#   Windows : WINDOWS_CERT_BASE64 + WINDOWS_CERT_PASSWORD  (Authenticode .pfx)
+#   macOS   : APPLE_CERTIFICATE_BASE64 + APPLE_CERTIFICATE_PASSWORD +
+#             APPLE_ID + APPLE_APP_PASSWORD + APPLE_TEAM_ID  (Developer ID + notarization)
+#   Updates : SPARKLE_ED25519_PRIVATE_KEY  (macOS in-app auto-update feed)
+# When a secret is absent the corresponding signing/notarization step is skipped
+# and the artifact is produced unsigned.
+
+on:
+  push:
+    tags:
+      - 'asset-browser-v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  FLUTTER_VERSION: '3.38.5'
+  SPARKLE_VERSION: '2.8.1'
+  # Releases + in-app update feed both live on this monorepo.
+  UPDATE_GITHUB_OWNER: 'KumihoIO'
+  UPDATE_GITHUB_REPO: 'kumiho-apps'
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: asset-browser
+    env:
+      WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^asset-browser-v', ''
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw "Unexpected tag format: ${{ github.ref_name }}" }
+          "APP_VERSION=$version.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build Windows (Release)
+        run: |
+          flutter build windows `
+            --release `
+            --dart-define=ENVIRONMENT=production `
+            --dart-define=CONTROL_PLANE_URL=https://control.kumiho.cloud `
+            --dart-define=UPDATE_GITHUB_OWNER=${{ env.UPDATE_GITHUB_OWNER }} `
+            --dart-define=UPDATE_GITHUB_REPO=${{ env.UPDATE_GITHUB_REPO }}
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command iscc.exe -ErrorAction SilentlyContinue)) {
+            choco install innosetup -y --no-progress --ignore-package-exit-codes
+          }
+          if (-not (Get-Command iscc.exe -ErrorAction SilentlyContinue)) { throw "iscc.exe not found" }
+
+      - name: Build Windows installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:APP_VERSION) { $env:APP_VERSION = "0.0.0.0" }
+          if (Test-Path "dist\windows") { Remove-Item -Recurse -Force "dist\windows" }
+          New-Item -ItemType Directory -Force -Path "dist\windows" | Out-Null
+          iscc.exe windows\installer\kumiho_asset_browser.iss
+
+      - name: Sign Windows installer
+        if: env.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pfx = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_BASE64))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+            Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw "signtool.exe not found" }
+          Get-ChildItem dist\windows\*.exe | ForEach-Object {
+            & $signtool sign /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
+              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "signtool failed for $($_.Name)" }
+          }
+          Remove-Item $pfx -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-browser-windows
+          path: asset-browser/dist/windows/*.exe
+          retention-days: 14
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: asset-browser
+    env:
+      SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      MACOS_PROVISIONPROFILE_BASE64: ${{ secrets.MACOS_PROVISIONPROFILE_BASE64 }}
+      GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Build & package macOS (signs + notarizes only if Apple secrets are set)
+        shell: bash
+        env:
+          ENVIRONMENT: production
+          CONTROL_PLANE_URL: https://control.kumiho.cloud
+        run: |
+          chmod +x scripts/macos/build_release.sh
+          scripts/macos/build_release.sh
+
+      - name: Sign Sparkle update + generate appcast
+        if: startsWith(github.ref, 'refs/tags/asset-browser-v') && env.SPARKLE_ED25519_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Sparkle CLI tools
+          TARBALL="/tmp/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          curl -L -o "$TARBALL" "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p /tmp/sparkle && tar -xf "$TARBALL" -C /tmp/sparkle
+          SPARKLE_BIN="$(find /tmp/sparkle -maxdepth 4 -type d -name bin | head -n1)"
+          export PATH="$SPARKLE_BIN:$PATH"
+
+          # Use a space-free asset name so the GitHub Releases download URL in the
+          # appcast resolves correctly (GitHub rewrites spaces in asset names).
+          mkdir -p dist/macos
+          if [[ -f "dist/macos/Kumiho Browser.zip" ]]; then
+            mv -f "dist/macos/Kumiho Browser.zip" "dist/macos/KumihoBrowser-macos.zip"
+          fi
+          ZIP_PATH="dist/macos/KumihoBrowser-macos.zip"
+          [[ -f "$ZIP_PATH" ]] || { echo "Missing $ZIP_PATH" >&2; exit 3; }
+
+          KEY_FILE="/tmp/sparkle_ed25519_private_key"
+          printf '%s' "$SPARKLE_ED25519_PRIVATE_KEY" | tr -d ' \r\n\t' > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          sign_update "$ZIP_PATH" --ed-key-file "$KEY_FILE" > "${ZIP_PATH}.signature"
+
+          # The appcast is served from the latest release; the ZIP is downloaded
+          # from this tag's release assets.
+          BASE_URL="https://github.com/${UPDATE_GITHUB_OWNER}/${UPDATE_GITHUB_REPO}/releases/download/${GITHUB_REF_NAME}/"
+          INPUT_DIR="$(mktemp -d)"
+          cp -f "$ZIP_PATH" "${ZIP_PATH}.signature" "$INPUT_DIR/"
+          generate_appcast --download-url-prefix "$BASE_URL" --ed-key-file "$KEY_FILE" \
+            -o dist/macos/appcast.xml "$INPUT_DIR"
+          echo "==> appcast.xml"; head -n 30 dist/macos/appcast.xml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-browser-macos
+          path: asset-browser/dist/macos/
+          retention-days: 14
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: asset-browser
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        working-directory: .
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake pkg-config ninja-build \
+            libasound2-dev libgtk-3-dev libblkid-dev liblzma-dev \
+            libsecret-1-dev libjsoncpp-dev libwebkit2gtk-4.0-dev rpm
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+        run: |
+          VERSION="${GITHUB_REF_NAME#asset-browser-v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Bad tag $GITHUB_REF_NAME" >&2; exit 2; }
+          echo "APP_VERSION_SEMVER=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Linux (Release)
+        run: |
+          flutter build linux --release \
+            --dart-define=ENVIRONMENT=production \
+            --dart-define=CONTROL_PLANE_URL=https://control.kumiho.cloud \
+            --dart-define=UPDATE_GITHUB_OWNER=${{ env.UPDATE_GITHUB_OWNER }} \
+            --dart-define=UPDATE_GITHUB_REPO=${{ env.UPDATE_GITHUB_REPO }}
+
+      - name: Build Linux packages (.deb + .rpm)
+        run: |
+          chmod +x scripts/package_linux.sh
+          scripts/package_linux.sh --version "${APP_VERSION_SEMVER:-0.0.0}" \
+            --bundle-dir build/linux/x64/release/bundle --out-dir dist/linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asset-browser-linux
+          path: asset-browser/dist/linux/*
+          retention-days: 14
+
+  release:
+    name: Create GitHub Release
+    needs: [build-windows, build-macos, build-linux]
+    if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/asset-browser-windows/*.exe
+            artifacts/asset-browser-macos/*
+            artifacts/asset-browser-linux/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
