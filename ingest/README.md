@@ -3,6 +3,36 @@
 This folder contains the scaffolding for the Tauri desktop shell, web UI, and
 local Python worker described in `kumiho-ingest/AGENT.md`.
 
+## Install
+
+Prebuilt installers for Windows, macOS, and Linux are published on the
+[Releases](https://github.com/KumihoIO/kumiho-apps/releases) page. To grab the
+latest with one line:
+
+**Windows (PowerShell)**
+```powershell
+irm https://raw.githubusercontent.com/KumihoIO/kumiho-apps/main/install/ingest-studio.ps1 | iex
+```
+
+**macOS / Linux**
+```bash
+curl -fsSL https://raw.githubusercontent.com/KumihoIO/kumiho-apps/main/install/ingest-studio.sh | sh
+```
+
+The script downloads the right artifact for your OS (NSIS `.exe`/`.msi` on
+Windows, `.dmg` on macOS, `.AppImage`/`.deb` on Linux) from the latest release.
+
+## Connecting to a self-hosted server (Community Edition)
+
+Ingest Studio can connect directly to a self-hosted [Kumiho Server Community
+Edition (CE)](https://github.com/KumihoIO/kumiho-server-community) instead of
+Kumiho Cloud — no Firebase sign-in or control-plane discovery required.
+
+In the app, open **Settings → Server**, tick **Use local server (CE)**, set the
+address (defaults to `127.0.0.1:9190`), and click **Apply & restart worker**.
+The Python worker then connects to the local CE endpoint over plaintext gRPC
+with no auth token. Untick it to return to Kumiho Cloud.
+
 ## Structure
 
 - `apps/ingest-studio-ui`: Vite + React UI.

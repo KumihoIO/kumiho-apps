@@ -185,19 +185,41 @@ pub fn start_worker(app: &AppHandle, worker_state: &State<WorkerState>) -> Resul
   let discovery_cache_file = kumiho_dir.join("discovery-cache.json");
   maybe_purge_localhost_discovery_cache(app, &discovery_cache_file, &control_plane_url);
 
+  // Local / self-hosted (CE) server config. When set, the worker connects
+  // directly to a loopback CE endpoint and skips control-plane discovery.
+  let local_server = fs::read_to_string(kumiho_dir.join("local_server.txt"))
+    .ok()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty());
+
   let mut command = Command::new(&env_info.python_path);
   command
     .arg("-u")
     .arg(worker_path)
     .current_dir(worker_dir)
     .env("KUMIHO_CONFIG_DIR", &kumiho_dir)
-    .env("KUMIHO_DISCOVERY_CACHE_FILE", &discovery_cache_file)
-    .env("KUMIHO_CONTROL_PLANE_URL", &control_plane_url)
-    // Ensure we always use control-plane discovery (never a pinned local endpoint).
-    .env("KUMIHO_FORCE_DISCOVERY_REFRESH", "1")
-    .env_remove("KUMIHO_SERVER_ENDPOINT")
-    .env_remove("KUMIHO_SERVER_ADDRESS")
-    .env_remove("KUMIHO_DISABLE_AUTO_DISCOVERY")
+    .env("KUMIHO_DISCOVERY_CACHE_FILE", &discovery_cache_file);
+
+  if let Some(addr) = &local_server {
+    emit_log(app, "info", format!("Local/CE server mode: connecting to {addr}"));
+    command
+      .env("KUMIHO_LOCAL_SERVER_ADDR", addr)
+      .env("KUMIHO_SERVER_ENDPOINT", addr)
+      .env("KUMIHO_DISABLE_AUTO_DISCOVERY", "true")
+      .env_remove("KUMIHO_CONTROL_PLANE_URL")
+      .env_remove("KUMIHO_FORCE_DISCOVERY_REFRESH");
+  } else {
+    command
+      .env("KUMIHO_CONTROL_PLANE_URL", &control_plane_url)
+      // Ensure we always use control-plane discovery (never a pinned local endpoint).
+      .env("KUMIHO_FORCE_DISCOVERY_REFRESH", "1")
+      .env_remove("KUMIHO_LOCAL_SERVER_ADDR")
+      .env_remove("KUMIHO_SERVER_ENDPOINT")
+      .env_remove("KUMIHO_SERVER_ADDRESS")
+      .env_remove("KUMIHO_DISABLE_AUTO_DISCOVERY");
+  }
+
+  command
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
@@ -233,6 +255,29 @@ pub fn start_worker(app: &AppHandle, worker_state: &State<WorkerState>) -> Resul
   });
   emit_log(app, "info", "Worker process started.");
   Ok(())
+}
+
+/// Persist (or clear) the local/self-hosted CE server address. When set, the
+/// next worker start connects directly to this endpoint instead of using
+/// control-plane discovery. Pass `None`/empty to revert to Kumiho Cloud.
+pub fn write_local_server(app: &AppHandle, addr: Option<String>) -> Result<(), String> {
+  let app_data_dir = app
+    .path()
+    .app_data_dir()
+    .map_err(|err| format!("unable to resolve app data dir: {err}"))?;
+  let kumiho_dir = app_data_dir.join("kumiho");
+  fs::create_dir_all(&kumiho_dir)
+    .map_err(|err| format!("failed to create kumiho config dir: {err}"))?;
+  let file = kumiho_dir.join("local_server.txt");
+  match addr.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+    Some(a) => {
+      fs::write(&file, a).map_err(|err| format!("failed to write local server config: {err}"))
+    }
+    None => {
+      let _ = fs::remove_file(&file);
+      Ok(())
+    }
+  }
 }
 
 pub fn stop_worker(app: &AppHandle, worker_state: &State<WorkerState>) -> Result<(), String> {

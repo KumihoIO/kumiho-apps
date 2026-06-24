@@ -328,6 +328,23 @@ class KumihoClient:
         self._client = None
 
     def connect(self, tenant_hint=None):
+        # Local / self-hosted (CE) mode: connect directly to a loopback CE
+        # server, bypassing Firebase auth and control-plane discovery entirely.
+        # CE serves plaintext gRPC and ignores auth/tenant, so no token is needed.
+        local_addr = os.environ.get("KUMIHO_LOCAL_SERVER_ADDR", "").strip()
+        if local_addr:
+            client_mod = importlib.import_module("kumiho.client")
+            client_cls = getattr(client_mod, "_Client")
+            self._tenant_hint = tenant_hint
+            self._client = client_cls(
+                target=local_addr,
+                auth_token=None,
+                use_discovery=False,
+                enable_auto_login=False,
+            )
+            _safe_stderr_log("[kumiho-worker] local_server_mode", {"target": local_addr})
+            return self._client
+
         if not self._token:
             raise RuntimeError("No auth token set.")
 

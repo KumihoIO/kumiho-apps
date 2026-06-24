@@ -61,6 +61,13 @@ pub fn update_kumiho_sdk(app: AppHandle) -> Result<python_env::PythonEnvInfo, St
   python_env::update_kumiho_sdk(&app)
 }
 
+/// Set (or clear) the local/self-hosted CE server address. Takes effect on the
+/// next worker (re)start. Pass `null`/empty to use Kumiho Cloud.
+#[tauri::command]
+pub fn set_local_server(app: AppHandle, addr: Option<String>) -> Result<(), String> {
+  python_env::write_local_server(&app, addr)
+}
+
 fn keychain_entry() -> Result<Entry, String> {
   Entry::new("com.kumiho.ingest.studio", "firebase_id_token")
     .map_err(|err| format!("failed to init keychain entry: {err}"))

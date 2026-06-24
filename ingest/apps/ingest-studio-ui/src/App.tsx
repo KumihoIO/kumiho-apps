@@ -467,6 +467,15 @@ export default function App() {
     const stored = window.localStorage.getItem("kumiho-ingest-theme");
     return stored === "light" ? "light" : "dark";
   });
+  const [localServerEnabled, setLocalServerEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("kumiho-ingest-local-server-enabled") === "1";
+  });
+  const [localServerAddr, setLocalServerAddr] = useState<string>(() => {
+    if (typeof window === "undefined") return "127.0.0.1:9190";
+    return window.localStorage.getItem("kumiho-ingest-local-server-addr") || "127.0.0.1:9190";
+  });
+  const [localServerStatus, setLocalServerStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
@@ -1360,6 +1369,34 @@ export default function App() {
     }
   };
 
+  const handleSaveLocalServer = async () => {
+    setError(null);
+    setLocalServerStatus("Applying...");
+    const addr = localServerEnabled ? localServerAddr.trim() : null;
+    try {
+      window.localStorage.setItem(
+        "kumiho-ingest-local-server-enabled",
+        localServerEnabled ? "1" : "0",
+      );
+      window.localStorage.setItem("kumiho-ingest-local-server-addr", localServerAddr.trim());
+      await callCommand("set_local_server", { addr });
+      await callCommand("restart_python_worker");
+      setLocalServerStatus(
+        localServerEnabled
+          ? `Connected to local server ${addr} (no sign-in required)`
+          : "Using Kumiho Cloud",
+      );
+      appendLog(
+        "info",
+        localServerEnabled ? `Local/CE server enabled: ${addr}` : "Local server disabled (cloud).",
+      );
+    } catch (err) {
+      setError(formatError(err));
+      setLocalServerStatus("Failed to apply.");
+      appendLog("error", `Local server update failed: ${formatError(err)}`);
+    }
+  };
+
   const handleStartWorker = async () => {
     setError(null);
     setWorkerStatus("Starting...");
@@ -2084,6 +2121,33 @@ export default function App() {
           </button>
           <p className="status">{envStatus}</p>
           <p className="status">{sdkStatus}</p>
+        </article>
+
+        <article className="card">
+          <h3>Server</h3>
+          <p className="muted">
+            Connect to a self-hosted Kumiho server (Community Edition) instead of
+            Kumiho Cloud. CE serves plaintext gRPC on loopback and needs no sign-in.
+          </p>
+          <label className="checkbox-row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={localServerEnabled}
+              onChange={(event) => setLocalServerEnabled(event.target.checked)}
+            />
+            <span>Use local server (CE)</span>
+          </label>
+          {localServerEnabled ? (
+            <input
+              type="text"
+              value={localServerAddr}
+              onChange={(event) => setLocalServerAddr(event.target.value)}
+              placeholder="127.0.0.1:9190"
+              style={{ marginTop: 8 }}
+            />
+          ) : null}
+          <button onClick={handleSaveLocalServer}>Apply &amp; restart worker</button>
+          <p className="status">{localServerStatus}</p>
         </article>
 
         <article className="card">

@@ -17,6 +17,7 @@ fn main() {
     .invoke_handler(tauri::generate_handler![
       commands::ensure_python_env,
       commands::update_kumiho_sdk,
+      commands::set_local_server,
       commands::start_python_worker,
       commands::restart_python_worker,
       commands::set_auth_token,

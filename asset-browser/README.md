@@ -27,6 +27,25 @@ Kumiho Browser (`kumiho-browser`) is also the human-facing UI for the Kumiho Cog
 
 *Coming soon*
 
+## Install
+
+Prebuilt installers for Windows, macOS, and Linux are published on the
+[Releases](https://github.com/KumihoIO/kumiho-apps/releases) page. To grab the
+latest with one line:
+
+**Windows (PowerShell)**
+```powershell
+irm https://raw.githubusercontent.com/KumihoIO/kumiho-apps/main/install/asset-browser.ps1 | iex
+```
+
+**macOS / Linux**
+```bash
+curl -fsSL https://raw.githubusercontent.com/KumihoIO/kumiho-apps/main/install/asset-browser.sh | sh
+```
+
+The script downloads the right artifact for your OS (`.exe` on Windows, `.dmg`
+on macOS, `.deb`/`.rpm`/`.AppImage` on Linux) from the latest release.
+
 ## Getting Started
 
 ### Prerequisites
