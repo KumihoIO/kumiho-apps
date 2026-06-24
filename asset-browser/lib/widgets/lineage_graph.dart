@@ -59,6 +59,11 @@ class _LineageGraphWidgetState extends State<LineageGraphWidget> {
     super.initState();
     _graphData = widget.graphData;
     _autoLayoutNodes();
+    // Frame the graph once the canvas has a real size (context.size is null
+    // until the first layout pass), so it opens centered instead of off-screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fitToView();
+    });
   }
 
   @override
@@ -67,6 +72,9 @@ class _LineageGraphWidgetState extends State<LineageGraphWidget> {
     if (widget.graphData != oldWidget.graphData) {
       _graphData = widget.graphData;
       _autoLayoutNodes();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fitToView();
+      });
     }
   }
 

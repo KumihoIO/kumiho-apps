@@ -136,6 +136,7 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
     final playlistItems = ref.watch(browserProvider).playlistItems;
     final isInPlaylist = playlistItems.any((e) => e.id == widget.item.id);
     final isAuthenticated = ref.watch(isAuthenticatedProvider);
+    final canBrowse = ref.watch(canBrowseProvider);
     final colors = KumihoTheme.of(context);
     
     return ListView(
@@ -160,8 +161,9 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
         _buildSettingsSection(colors),
         const SizedBox(height: 16),
         const _Divider(),
-        // Lineage section (only for authenticated users)
-        if (isAuthenticated)
+        // Lineage section — available whenever browsing is possible
+        // (authenticated cloud, self-hosted/CE, or anonymous tenant).
+        if (canBrowse)
           _buildLineageSection(context, ref, colors),
       ],
     );
@@ -413,6 +415,7 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
   }
 
   Widget _buildPreview(BuildContext context, WidgetRef ref, bool isInPlaylist, bool isAuthenticated) {
+    final canBrowse = ref.watch(canBrowseProvider);
     final isWindows = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
     final previewLogical = (panelWidth - 32).clamp(0.0, 4096.0);
     final dpr = MediaQuery.of(context).devicePixelRatio;
@@ -511,20 +514,24 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                   },
                 ),
                 const SizedBox(width: 4),
-                // Share button - only for authenticated users
-                if (isAuthenticated) ...[                  
+                // Share button - only for authenticated (cloud) users.
+                if (isAuthenticated) ...[
                   _ActionButton(
                     icon: Icons.share_outlined,
                     tooltip: 'Share',
                     onTap: () => _showShareDialog(context, item),
                   ),
                   const SizedBox(width: 4),
+                ],
+                // Lineage graph - available whenever browsing is possible
+                // (cloud, self-hosted/CE, or anonymous tenant), not just when
+                // signed in to Firebase.
+                if (canBrowse)
                   _ActionButton(
                     icon: Icons.account_tree_outlined,
                     tooltip: 'Graph',
                     onTap: () => _showLineageGraph(context, ref),
                   ),
-                ],
               ],
             ),
           ),
