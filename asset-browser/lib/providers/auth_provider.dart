@@ -228,7 +228,10 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
 final canBrowseProvider = Provider<bool>((ref) {
   final isAuthenticated = ref.watch(isAuthenticatedProvider);
   if (isAuthenticated) return true;
-  
+
+  // Local / self-hosted (CE) mode connects directly and needs no sign-in.
+  if (ref.watch(settingsProvider).localServerEnabled) return true;
+
   // Check for anonymous tenant ID
   final anonymousTenantId = ref.watch(settingsProvider).anonymousTenantId;
   return anonymousTenantId != null && anonymousTenantId.isNotEmpty;

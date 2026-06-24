@@ -4,6 +4,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/perf/perf_logger.dart';
@@ -254,10 +255,14 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     // to intermittently stall the UI isolate for ~20-30s during early startup.
     // Defer loading persisted settings until after startup settles.
     if (isWindows) {
+      // Load right after the first frame so the initial render isn't blocked by
+      // the (historically slow) shared_preferences init on Windows, while still
+      // applying persisted settings — including local-server (CE) mode —
+      // promptly instead of 30 seconds later.
       if (PerfLogger.enabled) {
-        PerfLogger.log('SettingsNotifier: deferring settings load on Windows');
+        PerfLogger.log('SettingsNotifier: loading settings after first frame (Windows)');
       }
-      _deferredLoadTimer = Timer(const Duration(seconds: 30), () {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
         unawaited(_loadSettings());
       });
     } else {

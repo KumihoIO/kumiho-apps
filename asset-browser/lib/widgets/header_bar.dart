@@ -781,6 +781,7 @@ class _UserAccountButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
     final authNotifier = ref.read(authNotifierProvider.notifier);
+    final localServerEnabled = ref.watch(settingsProvider).localServerEnabled;
 
     return authState.when(
       data: (user) {
@@ -877,8 +878,19 @@ class _UserAccountButton extends ConsumerWidget {
             ),
           );
         } else {
-          // User is not logged in - show login button
           final colors = KumihoTheme.of(context);
+          // Local / self-hosted (CE) mode needs no sign-in: show a server
+          // indicator instead of the "Sign In" prompt.
+          if (localServerEnabled) {
+            return IconButton(
+              icon: Icon(Icons.dns_outlined, size: 22, color: colors.textMuted),
+              onPressed: () => _showLoginDialog(context, ref),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36),
+              tooltip: 'Local server (CE) — no sign-in needed',
+            );
+          }
+          // User is not logged in - show login button
           return IconButton(
             icon: Icon(Icons.account_circle_outlined, size: 22, color: colors.textMuted),
             onPressed: () => _showLoginDialog(context, ref),
