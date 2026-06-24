@@ -28,6 +28,9 @@ env:
   # Releases + in-app update feed both live on this monorepo.
   UPDATE_GITHUB_OWNER: 'KumihoIO'
   UPDATE_GITHUB_REPO: 'kumiho-apps'
+  # CMake 4.x on the runners rejects the Firebase C++ SDK's pre-3.5
+  # cmake_minimum_required(); this restores the old-policy compatibility.
+  CMAKE_POLICY_VERSION_MINIMUM: '3.5'
 
 jobs:
   build-windows:
