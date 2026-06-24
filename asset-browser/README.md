@@ -78,12 +78,16 @@ The application uses `--dart-define` for environment configuration:
 | Environment | Control Plane URL | Command |
 |-------------|-------------------|---------|
 | Development | `http://localhost:3000` | `flutter run -d windows` (default) |
-| Staging | `https://control-staging.kumiho.cloud` | `flutter run -d windows --dart-define=ENVIRONMENT=staging` |
 | Production | `https://control.kumiho.cloud` | `flutter run -d windows --dart-define=ENVIRONMENT=production` |
 
+These settings apply to **Kumiho Cloud** only. A self-hosted Community Edition
+server needs **no control plane URL** — see
+[Connecting to a self-hosted server](#connecting-to-a-self-hosted-server-community-edition)
+below.
+
 **Available flags:**
-- `ENVIRONMENT` - Set to `development`, `staging`, or `production`
-- `CONTROL_PLANE_URL` - Override the control plane URL directly
+- `ENVIRONMENT` - Set to `development` or `production`
+- `CONTROL_PLANE_URL` - Override the control plane URL directly (Kumiho Cloud)
 - `DATA_PLANE_URL` - Override the default data plane URL
 
 ### Connecting to a self-hosted server (Community Edition)
