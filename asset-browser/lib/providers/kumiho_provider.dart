@@ -1993,12 +1993,27 @@ class PagedItemsNotifier extends StateNotifier<PagedItemsState> {
 
           if (uniqueArtifacts.isEmpty) return null;
 
-          final artifactWithLocation = uniqueArtifacts.values.firstWhere(
-            (a) => (a.location).isNotEmpty,
-            orElse: () => uniqueArtifacts.values.first,
-          );
+          // Pick the preview artifact, preferring an explicit 'thumbnail'
+          // artifact, then the revision's default artifact, then any artifact
+          // with a location. This makes a user-added thumbnail the preview.
+          final withLocation =
+              uniqueArtifacts.values.where((a) => (a.location).isNotEmpty).toList();
+          if (withLocation.isEmpty) return null;
 
-          if ((artifactWithLocation.location).isEmpty) return null;
+          Artifact pickPreviewArtifact() {
+            for (final a in withLocation) {
+              if (a.name == 'thumbnail') return a;
+            }
+            final def = latest.defaultArtifact;
+            if (def != null && def.isNotEmpty) {
+              for (final a in withLocation) {
+                if (a.name == def) return a;
+              }
+            }
+            return withLocation.first;
+          }
+
+          final artifactWithLocation = pickPreviewArtifact();
 
           final previewData = KumihoArtifactData(item: data.item, revision: latest, artifact: artifactWithLocation);
           return _mediaItemFromArtifactData(previewData);

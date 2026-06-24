@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/browser_provider.dart';
 import '../providers/kumiho_provider.dart';
+import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
 
 Color _tagAccent(BuildContext context, Color base) {
@@ -755,12 +756,30 @@ class _ArtifactsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final revisionKref = selection.selectedRevision?.revisionKref;
+    final revision = selection.selectedRevision;
+    final revisionKref = revision?.revisionKref;
+
+    // Offer "Add thumbnail" only on a mutable (unpublished) revision that does
+    // not already have a 'thumbnail' artifact.
+    Widget? action;
+    if (revisionKref != null && revision != null && !revision.isPublished) {
+      final hasThumbnail = ref.watch(revisionArtifactsProvider(revisionKref)).maybeWhen(
+            data: (artifacts) => artifacts.any((a) => a.name == 'thumbnail'),
+            orElse: () => true,
+          );
+      if (!hasThumbnail) {
+        action = _SectionAction(
+          icon: Icons.add_photo_alternate_outlined,
+          tooltip: 'Add thumbnail',
+          onTap: () => _addThumbnail(context, ref, revisionKref),
+        );
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(title: 'Artifacts', icon: Icons.folder_outlined),
+        _SectionHeader(title: 'Artifacts', icon: Icons.folder_outlined, action: action),
         Expanded(
           child: revisionKref == null
               ? const _EmptySectionState(message: 'Select a revision')
@@ -768,6 +787,19 @@ class _ArtifactsSection extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _addThumbnail(
+      BuildContext context, WidgetRef ref, String revisionKref) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final path = await AssetActions.addThumbnail(ref, revisionKref);
+      if (path != null) {
+        messenger?.showSnackBar(const SnackBar(content: Text('Thumbnail added')));
+      }
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text('Failed to add thumbnail: $e')));
+    }
   }
 }
 
@@ -897,8 +929,9 @@ class _ArtifactRow extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   final String title;
   final IconData icon;
+  final Widget? action;
 
-  const _SectionHeader({required this.title, required this.icon});
+  const _SectionHeader({required this.title, required this.icon, this.action});
 
   @override
   Widget build(BuildContext context) {
@@ -924,7 +957,40 @@ class _SectionHeader extends StatelessWidget {
               letterSpacing: 0.5,
             ),
           ),
+          if (action != null) ...[
+            const Spacer(),
+            action!,
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Compact icon action used in a [_SectionHeader] trailing slot.
+class _SectionAction extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _SectionAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = KumihoTheme.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: Icon(icon, size: 16, color: colors.textSecondary),
+        ),
       ),
     );
   }
