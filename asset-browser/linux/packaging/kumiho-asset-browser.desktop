@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Kumiho Asset Browser
+Comment=Browse and manage creative assets on Kumiho Cloud
+Exec=kumiho-asset-browser
+Icon=kumiho-asset-browser
+Terminal=false
+Categories=Graphics;Development;
+StartupNotify=true

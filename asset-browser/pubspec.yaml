@@ -1,0 +1,127 @@
+name: kumiho_asset_browser
+description: "Kumiho Asset Browser - A desktop application for browsing and managing creative assets using the Kumiho Cloud platform."
+publish_to: 'none'
+version: 1.0.1+1
+
+homepage: https://kumiho.io
+repository: https://github.com/kumihoclouds/kumiho-asset-browser
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Kumiho SDK (canonical: KumihoIO/kumiho-SDKs monorepo, dart/ subdirectory).
+  # For local SDK development, add a path override in pubspec_overrides.yaml
+  # (gitignored) pointing at ../../kumiho-SDKs/dart.
+  kumiho:
+    git:
+      url: https://github.com/KumihoIO/kumiho-SDKs.git
+      ref: main
+      path: dart
+
+  # Firebase Authentication
+  firebase_core: ^4.3.0
+  firebase_auth: ^6.1.3
+  desktop_webview_auth: ^0.0.15  # Desktop OAuth popup
+  flutter_secure_storage: ^9.2.2  # Secure token storage
+
+  # State Management
+  flutter_riverpod: ^2.4.0
+  riverpod_annotation: ^2.3.0
+
+  # Routing
+  go_router: ^14.0.0
+
+  # UI Components
+  fluent_ui: ^4.9.0  # Windows-style UI
+  material_symbols_icons: ^4.2700.0
+
+  # File Operations
+  file_picker: ^8.0.0
+  path: ^1.9.0
+  path_provider: ^2.1.0
+
+  # Data & Storage
+  shared_preferences: ^2.2.0
+  hive: ^2.2.0
+  hive_flutter: ^1.1.0
+
+  # Utilities
+  url_launcher: ^6.2.0
+  share_plus: ^10.0.0  # Native sharing with file attachments
+  intl: ^0.20.2
+  logger: ^2.0.0
+  collection: ^1.18.0
+  http: ^1.2.0  # HTTP client for control plane API
+  crypto: ^3.0.3  # For OAuth PKCE S256 code challenge
+  oauth1: ^2.0.0  # For Twitter OAuth 1.0a media upload
+  grpc: ^4.3.0
+  image: ^4.2.0
+
+  # App metadata
+  package_info_plus: ^8.0.2
+
+  # Window Management (Desktop)
+  window_manager: ^0.4.0
+
+  # Video Playback (Desktop)
+  media_kit: ^1.1.11
+  media_kit_video: ^1.2.5
+  media_kit_libs_windows_video: ^1.0.10
+
+  # Cross-platform drag and drop (for external app drops)
+  super_drag_and_drop: ^0.8.21
+  media_kit_libs_macos_video: ^1.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  riverpod_generator: ^2.4.0
+  build_runner: ^2.4.0
+  hive_generator: ^2.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/images/
+    - assets/icons/common/
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package

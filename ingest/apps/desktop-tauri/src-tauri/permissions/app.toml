@@ -1,0 +1,21 @@
+"$schema" = "schemas/schema.json"
+
+[[permission]]
+identifier = "ingest-commands"
+description = "Allow ingest studio app commands."
+commands.allow = [
+  "ensure_python_env",
+  "update_kumiho_sdk",
+  "start_python_worker",
+  "restart_python_worker",
+  "set_auth_token",
+  "store_auth_token_secure",
+  "load_auth_token_secure",
+  "clear_auth_token_secure",
+  "list_projects",
+  "list_spaces",
+  "list_items",
+  "ingest_files",
+  "storyboard_ingest",
+  "bundle_update_sequence",
+]

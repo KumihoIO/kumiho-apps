@@ -1,0 +1,23 @@
+{
+  "identifier": "main",
+  "description": "Main window permissions for the ingest studio.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:path:allow-join",
+    "core:path:allow-resolve",
+    "core:path:allow-resolve-directory",
+    "dialog:allow-open",
+    "fs:create-app-specific-dirs",
+    "fs:allow-appcache-read-recursive",
+    "fs:allow-appcache-write-recursive",
+    "fs:allow-appcache-meta-recursive",
+    "fs:allow-desktop-read-recursive",
+    "fs:allow-document-read-recursive",
+    "fs:allow-download-read-recursive",
+    "fs:allow-picture-read-recursive",
+    "fs:allow-video-read-recursive",
+    "ingest-commands"
+  ]
+}

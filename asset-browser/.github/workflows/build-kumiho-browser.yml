@@ -1,0 +1,599 @@
+name: Build Kumiho Browser Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'browser-v*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Build environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+env:
+  FLUTTER_VERSION: '3.38.5'
+  UPDATE_GITHUB_OWNER: 'kumihoclouds'
+  UPDATE_GITHUB_REPO: 'kumiho-browser'
+  RELEASE_GIT_URL: 'git@github.com:kumihoclouds/kumiho-browser.git'
+  RELEASE_BRANCH: 'main'
+  SPARKLE_VERSION: '2.8.1'
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/browser-v')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"  # e.g. browser-v1.2.3
+          $version = $tag -replace '^browser-v', ''
+          if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw "Unexpected tag format: $tag"
+          }
+          "APP_VERSION=$version.0" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build Windows (Production)
+        run: |
+          flutter build windows `
+            --release `
+            --dart-define=ENVIRONMENT=production `
+            --dart-define=CONTROL_PLANE_URL=https://control.kumiho.cloud `
+            --dart-define=UPDATE_GITHUB_OWNER=${{ env.UPDATE_GITHUB_OWNER }} `
+            --dart-define=UPDATE_GITHUB_REPO=${{ env.UPDATE_GITHUB_REPO }}
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            # Chocolatey returns a non-zero exit code in some "already installed" scenarios.
+            # We only care that iscc.exe is available afterwards.
+            choco install innosetup -y --no-progress --ignore-package-exit-codes
+            $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          }
+
+          if (-not $iscc) {
+            throw "Inno Setup compiler (iscc.exe) not found after install attempt."
+          }
+
+          Write-Host "Using ISCC at: $($iscc.Source)"
+
+      - name: Build Windows installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:APP_VERSION) {
+            # For non-tag builds, fall back to a safe version.
+            $env:APP_VERSION = "0.0.0.0"
+          }
+
+          # Ensure we don't accidentally upload stale installers from previous builds.
+          if (Test-Path "dist\windows") {
+            Remove-Item -Recurse -Force "dist\windows" | Out-Null
+          }
+          New-Item -ItemType Directory -Force -Path "dist\windows" | Out-Null
+
+          if (-not (Test-Path "windows\installer\kumiho_asset_browser.iss")) {
+            throw "Missing Inno Setup script: windows\\installer\\kumiho_asset_browser.iss"
+          }
+          iscc.exe windows\\installer\\kumiho_asset_browser.iss
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-windows-installer
+          path: dist/windows/*.exe
+          retention-days: 30
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-windows-x64
+          path: build/windows/x64/runner/Release/
+          retention-days: 30
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    env:
+      # GitHub Actions does not allow referencing `secrets.*` directly in `if:` expressions.
+      # We pass the secret through env and gate Sparkle steps on the env var instead.
+      SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+      # Apple code signing and notarization
+      APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # Optional: provisioning profile for using restricted entitlements (Keychain access groups)
+      # Required on some newer macOS versions to avoid launch failure when signing with
+      # com.apple.application-identifier / keychain-access-groups.
+      MACOS_PROVISIONPROFILE_BASE64: ${{ secrets.MACOS_PROVISIONPROFILE_BASE64 }}
+      # Firebase macOS config (base64-encoded GoogleService-Info.plist)
+      GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Ensure CocoaPods is available
+        shell: bash
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            sudo gem install cocoapods
+          fi
+
+      - name: Build & package macOS (Production)
+        shell: bash
+        env:
+          ENVIRONMENT: production
+          CONTROL_PLANE_URL: https://control.kumiho.cloud
+          UPDATE_GITHUB_OWNER: ${{ env.UPDATE_GITHUB_OWNER }}
+          UPDATE_GITHUB_REPO: ${{ env.UPDATE_GITHUB_REPO }}
+          APPLE_CERTIFICATE_BASE64: ${{ env.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ env.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ env.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ env.APPLE_TEAM_ID }}
+        run: |
+          chmod +x scripts/macos/build_release.sh
+          scripts/macos/build_release.sh
+
+      - name: Install Sparkle tools
+        if: startsWith(github.ref, 'refs/tags/browser-v') && env.SPARKLE_ED25519_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARBALL="/tmp/Sparkle-${{ env.SPARKLE_VERSION }}.tar.xz"
+          SPARKLE_ROOT="/tmp/sparkle"
+
+          curl -L -o "$TARBALL" \
+            https://github.com/sparkle-project/Sparkle/releases/download/${{ env.SPARKLE_VERSION }}/Sparkle-${{ env.SPARKLE_VERSION }}.tar.xz
+
+          rm -rf "$SPARKLE_ROOT"
+          mkdir -p "$SPARKLE_ROOT"
+          tar -xf "$TARBALL" -C "$SPARKLE_ROOT"
+
+          SPARKLE_BIN="$(find "$SPARKLE_ROOT" -maxdepth 4 -type d -name bin -print | head -n 1)"
+          if [[ -z "${SPARKLE_BIN:-}" ]]; then
+            echo "Could not locate Sparkle bin directory under $SPARKLE_ROOT" >&2
+            find "$SPARKLE_ROOT" -maxdepth 4 -type d -print >&2
+            exit 1
+          fi
+
+          # Make available in *this* step and subsequent steps.
+          export PATH="$SPARKLE_BIN:$PATH"
+          echo "$SPARKLE_BIN" >> "$GITHUB_PATH"
+
+          command -v sign_update >/dev/null
+          command -v generate_appcast >/dev/null
+
+          sign_update --help >/dev/null
+          generate_appcast --help >/dev/null
+
+      - name: Sign Sparkle update ZIP + generate appcast.xml
+        if: startsWith(github.ref, 'refs/tags/browser-v') && env.SPARKLE_ED25519_PRIVATE_KEY != ''
+        shell: bash
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ env.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_ED25519_PRIVATE_KEY:-}" ]]; then
+            echo "Missing secret: SPARKLE_ED25519_PRIVATE_KEY" >&2
+            exit 2
+          fi
+
+          # Sparkle expects the Ed25519 private key as base64-encoded key data.
+          # People often paste extra labels like "Private key:" or include whitespace/newlines.
+          RAW_KEY="$SPARKLE_ED25519_PRIVATE_KEY"
+          RAW_KEY="${RAW_KEY//$'\r'/}"
+
+          # If the secret contains a line like: "Private key: <base64>", extract just the token.
+          if printf '%s\n' "$RAW_KEY" | grep -qi 'private key'; then
+            EXTRACTED="$(printf '%s\n' "$RAW_KEY" | sed -nE 's/^.*[Pp]rivate key:[[:space:]]*([A-Za-z0-9+/_=-]+).*$/\1/p' | head -n 1)"
+            if [[ -n "${EXTRACTED:-}" ]]; then
+              RAW_KEY="$EXTRACTED"
+            fi
+          fi
+
+          # Remove all whitespace; base64 decoders ignore it but Sparkle's parser can be strict.
+          RAW_KEY="$(printf '%s' "$RAW_KEY" | tr -d ' \n\t')"
+
+          export RAW_KEY
+
+          # Validate the key string is decodable as base64/base64url without printing it.
+          python3 -c $'import os,base64,sys\nraw=os.environ.get("RAW_KEY","")\nif not raw:\n    print("Sparkle key preprocessing resulted in empty key", file=sys.stderr)\n    sys.exit(2)\ntry:\n    base64.b64decode(raw, validate=True)\n    sys.exit(0)\nexcept Exception:\n    pass\ntry:\n    padded = raw + "=" * ((4 - (len(raw) % 4)) % 4)\n    base64.urlsafe_b64decode(padded)\n    sys.exit(0)\nexcept Exception:\n    print("Sparkle key is not valid base64/base64url. Store ONLY the private key base64 string (no labels, no JSON).", file=sys.stderr)\n    sys.exit(2)\n'
+
+          KEY_FILE="/tmp/sparkle_ed25519_private_key"
+          printf '%s' "$RAW_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          ZIP_PATH="dist/macos/Kumiho Browser.zip"
+          if [[ ! -f "$ZIP_PATH" ]]; then
+            echo "Missing ZIP at $ZIP_PATH" >&2
+            exit 3
+          fi
+
+          echo "==> Signing update ZIP"
+          # sign_update sometimes writes human-readable errors to stdout; don't swallow them into the .signature.
+          SIG_TMP="$(mktemp -t sparkle_signature.XXXXXX)"
+          ERR_TMP="$(mktemp -t sparkle_sign_update_err.XXXXXX)"
+
+          SIGN_ARGS=("$ZIP_PATH")
+          if sign_update --help 2>/dev/null | grep -q -- '--ed-key-file'; then
+            SIGN_ARGS+=(--ed-key-file "$KEY_FILE")
+          elif sign_update --help 2>/dev/null | grep -q -- '--ed-key'; then
+            SIGN_ARGS+=(--ed-key "$KEY_FILE")
+          else
+            echo "Unable to determine Ed25519 key flag for sign_update; printing help:" >&2
+            sign_update --help || true
+            exit 4
+          fi
+
+          if ! sign_update "${SIGN_ARGS[@]}" > "$SIG_TMP" 2>"$ERR_TMP"; then
+            echo "sign_update failed." >&2
+            if [[ -s "$SIG_TMP" ]]; then
+              echo "--- sign_update stdout ---" >&2
+              cat "$SIG_TMP" >&2
+            fi
+            if [[ -s "$ERR_TMP" ]]; then
+              echo "--- sign_update stderr ---" >&2
+              cat "$ERR_TMP" >&2
+            fi
+            exit 1
+          fi
+
+          mv -f "$SIG_TMP" "${ZIP_PATH}.signature"
+
+          echo "==> Generating appcast.xml"
+          BASE_URL="https://raw.githubusercontent.com/kumihoclouds/kumiho-browser/${{ env.RELEASE_BRANCH }}/releases/${GITHUB_REF_NAME}/macos/"
+          mkdir -p dist/macos
+          echo "==> dist/macos contents"
+          ls -la dist/macos
+
+          echo "==> generate_appcast --help"
+          generate_appcast --help || true
+
+          echo "==> Inspecting ZIP payload"
+          if command -v zipinfo >/dev/null 2>&1; then
+            zipinfo -1 "$ZIP_PATH" | head -n 50 || true
+          else
+            unzip -l "$ZIP_PATH" | head -n 50 || true
+          fi
+
+          echo "==> Reading Info.plist version fields (if present)"
+          if unzip -p "$ZIP_PATH" "Kumiho Browser.app/Contents/Info.plist" >/tmp/kumiho_info.plist 2>/dev/null; then
+            /usr/bin/plutil -p /tmp/kumiho_info.plist | egrep -n "CFBundle(ShortVersionString|Version)" || true
+          else
+            echo "Could not locate Info.plist at Kumiho Browser.app/Contents/Info.plist inside the ZIP" >&2
+          fi
+
+          APPCAST_TMP="$(mktemp -t sparkle_appcast.XXXXXX)"
+          APPCAST_ERR="$(mktemp -t sparkle_appcast_err.XXXXXX)"
+
+          # Sparkle does not allow multiple archives with the same bundle version in one appcast.
+          # We ship both a DMG (manual install) and ZIP (Sparkle update), but the appcast should
+          # be generated from the ZIP only.
+          APPCAST_INPUT_DIR="$(mktemp -d -t sparkle_appcast_input.XXXXXX)"
+          APPCAST_INPUT_DIR="${APPCAST_INPUT_DIR%/}"
+          cp -f "$ZIP_PATH" "$APPCAST_INPUT_DIR/"
+          if [[ -f "${ZIP_PATH}.signature" ]]; then
+            cp -f "${ZIP_PATH}.signature" "$APPCAST_INPUT_DIR/"
+          fi
+
+          APPCAST_OUT="dist/macos/appcast.xml"
+          rm -f "$APPCAST_OUT"
+
+          APPCAST_ARGS=(--download-url-prefix "$BASE_URL")
+          # Prefer signing the appcast with the Ed25519 key if the installed Sparkle tool supports it.
+          if generate_appcast --help 2>/dev/null | grep -q -- '--ed-key-file'; then
+            APPCAST_ARGS+=(--ed-key-file "$KEY_FILE")
+          elif generate_appcast --help 2>/dev/null | grep -q -- '--ed-key'; then
+            APPCAST_ARGS+=(--ed-key "$KEY_FILE")
+          fi
+
+          if ! generate_appcast "${APPCAST_ARGS[@]}" -o "$APPCAST_OUT" "$APPCAST_INPUT_DIR" > "$APPCAST_TMP" 2>"$APPCAST_ERR"; then
+            echo "generate_appcast failed." >&2
+            if [[ -s "$APPCAST_ERR" ]]; then
+              echo "--- generate_appcast stderr ---" >&2
+              cat "$APPCAST_ERR" >&2
+            fi
+            if [[ -s "$APPCAST_TMP" ]]; then
+              echo "--- generate_appcast stdout (first 200 lines) ---" >&2
+              head -n 200 "$APPCAST_TMP" >&2
+            fi
+            exit 1
+          fi
+
+          if [[ ! -s "$APPCAST_OUT" ]]; then
+            echo "generate_appcast did not create appcast.xml at $APPCAST_OUT" >&2
+            echo "--- generate_appcast stdout (first 200 lines) ---" >&2
+            head -n 200 "$APPCAST_TMP" >&2 || true
+            echo "--- generate_appcast stderr ---" >&2
+            cat "$APPCAST_ERR" >&2 || true
+            exit 5
+          fi
+
+          echo "==> appcast.xml (first 30 lines)"
+          head -n 30 "$APPCAST_OUT"
+
+      - name: Upload macOS distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-macos-dist
+          path: dist/macos/
+          retention-days: 30
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            pkg-config \
+            ninja-build \
+            libasound2-dev \
+            libasound2 \
+            libgtk-3-dev \
+            libblkid-dev \
+            liblzma-dev \
+            libsecret-1-dev \
+            libjsoncpp-dev \
+            libwebkit2gtk-4.0-dev \
+            rpm
+
+      - name: Verify ALSA headers/libs
+        shell: bash
+        run: |
+          set -euo pipefail
+          dpkg -s libasound2-dev >/dev/null
+          echo "ALSA header:"; ls -la /usr/include/alsa/asoundlib.h
+          echo "ALSA libs:"; ls -la /usr/lib/x86_64-linux-gnu/libasound.so* || true
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/browser-v')
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"  # e.g. browser-v1.2.3
+          VERSION="${TAG#browser-v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected tag format: $TAG" >&2
+            exit 2
+          fi
+          echo "APP_VERSION_SEMVER=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build Linux (Production)
+        run: |
+          flutter build linux \
+            --release \
+            --dart-define=ENVIRONMENT=production \
+            --dart-define=CONTROL_PLANE_URL=https://control.kumiho.cloud \
+            --dart-define=UPDATE_GITHUB_OWNER=${{ env.UPDATE_GITHUB_OWNER }} \
+            --dart-define=UPDATE_GITHUB_REPO=${{ env.UPDATE_GITHUB_REPO }}
+
+      - name: Build Linux packages (.deb + .rpm)
+        shell: bash
+        run: |
+          chmod +x scripts/package_linux.sh
+          VERSION="${APP_VERSION_SEMVER:-0.0.0}"
+          scripts/package_linux.sh --version "$VERSION" --bundle-dir build/linux/x64/release/bundle --out-dir dist/linux
+
+      - name: Upload Linux .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-linux-deb
+          path: dist/linux/*.deb
+          retention-days: 30
+
+      - name: Upload Linux .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-linux-rpm
+          path: dist/linux/*.rpm
+          retention-days: 30
+
+      - name: Upload Linux bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumiho-browser-linux-x64
+          path: build/linux/x64/release/bundle/
+          retention-days: 30
+
+  publish-to-kumiho-browser:
+    name: Publish artifacts to kumiho-browser repo
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/browser-v')
+    needs:
+      - build-windows
+      - build-macos
+      - build-linux
+
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kumiho-browser-macos-dist
+          path: artifacts/macos
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: kumiho-browser-windows-installer
+          path: artifacts/windows
+
+      - name: Download Linux deb
+        uses: actions/download-artifact@v4
+        with:
+          name: kumiho-browser-linux-deb
+          path: artifacts/linux
+
+      - name: Download Linux rpm
+        uses: actions/download-artifact@v4
+        with:
+          name: kumiho-browser-linux-rpm
+          path: artifacts/linux
+
+      - name: Configure SSH for release repo
+        shell: bash
+        env:
+          KUMIHO_BROWSER_DEPLOY_KEY: ${{ secrets.KUMIHO_BROWSER_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KUMIHO_BROWSER_DEPLOY_KEY:-}" ]]; then
+            echo "Missing secret: KUMIHO_BROWSER_DEPLOY_KEY" >&2
+            exit 2
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KUMIHO_BROWSER_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Publish to kumihoclouds/kumiho-browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          shopt -s nullglob
+
+          git config --global user.name "kumiho-browser-bot"
+          git config --global user.email "actions@users.noreply.github.com"
+
+          git clone "${{ env.RELEASE_GIT_URL }}" kumiho-browser
+
+          cd kumiho-browser
+          git checkout "${{ env.RELEASE_BRANCH }}" || git checkout -b "${{ env.RELEASE_BRANCH }}"
+          cd ..
+
+          mkdir -p "kumiho-browser/releases/${TAG}/macos" "kumiho-browser/releases/${TAG}/windows" "kumiho-browser/releases/${TAG}/linux"
+
+          # macOS
+          for f in artifacts/macos/*.dmg; do cp -f "$f" "kumiho-browser/releases/${TAG}/macos/"; done
+          for f in artifacts/macos/*.zip; do cp -f "$f" "kumiho-browser/releases/${TAG}/macos/"; done
+          for f in artifacts/macos/*.zip.signature; do cp -f "$f" "kumiho-browser/releases/${TAG}/macos/"; done
+          if [[ -f artifacts/macos/appcast.xml ]]; then
+            cp -f artifacts/macos/appcast.xml "kumiho-browser/appcast.xml"
+          fi
+
+          # Windows
+          for f in artifacts/windows/*.exe; do cp -f "$f" "kumiho-browser/releases/${TAG}/windows/"; done
+
+          # Linux
+          for f in artifacts/linux/*.deb; do cp -f "$f" "kumiho-browser/releases/${TAG}/linux/"; done
+          for f in artifacts/linux/*.rpm; do cp -f "$f" "kumiho-browser/releases/${TAG}/linux/"; done
+
+          cd kumiho-browser
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish.";
+            exit 0
+          fi
+          git commit -m "Release ${TAG}"
+          git push
+
+  create-release:
+    name: Create Release
+    needs: [build-windows, build-macos, build-linux]
+    # needs: [build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/browser-v')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Package Windows installer
+        run: |
+          cd artifacts/kumiho-browser-windows-installer
+          ls -la
+          cp *.exe ../../
+
+      - name: Package Windows
+        run: |
+          cd artifacts/kumiho-browser-windows-x64
+          zip -r ../../kumiho-browser-windows-x64.zip .
+
+      - name: Package macOS
+        run: |
+          cd artifacts/kumiho-browser-macos-dist
+          zip -r ../../kumiho-browser-macos.zip .
+
+      - name: Package Linux
+        run: |
+          cd artifacts/kumiho-browser-linux-x64
+          tar -czvf ../../kumiho-browser-linux-x64.tar.gz .
+
+      - name: Collect Linux packages
+        run: |
+          if [ -d artifacts/kumiho-browser-linux-deb ]; then
+            cp artifacts/kumiho-browser-linux-deb/*.deb . || true
+          fi
+          if [ -d artifacts/kumiho-browser-linux-rpm ]; then
+            cp artifacts/kumiho-browser-linux-rpm/*.rpm . || true
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            KumihoBrowserSetup-*.exe
+            kumiho-browser-windows-x64.zip
+            kumiho-browser-macos.zip
+            kumiho-browser-linux-x64.tar.gz
+            kumiho-browser_*.deb
+            kumiho-browser-*.rpm
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

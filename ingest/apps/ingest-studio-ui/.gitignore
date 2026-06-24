@@ -1,0 +1,6 @@
+# Local environment files — never commit real values.
+# Use .env.example as the template (committed).
+.env
+.env.local
+.env.*.local
+!.env.example

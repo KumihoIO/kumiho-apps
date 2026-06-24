@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/firebase.ts","./src/main.tsx","./src/tauri.ts","./src/vite-env.d.ts","./src/storyboard/slicing.test.ts","./src/storyboard/slicing.ts"],"version":"5.9.3"}
