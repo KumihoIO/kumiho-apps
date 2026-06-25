@@ -1,7 +1,7 @@
 name: kumiho_asset_browser
 description: "Kumiho Asset Browser - A desktop application for browsing and managing creative assets using the Kumiho Cloud platform."
 publish_to: 'none'
-version: 1.0.4+4
+version: 1.0.5+5
 
 homepage: https://kumiho.io
 repository: https://github.com/kumihoclouds/kumiho-asset-browser
