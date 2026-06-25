@@ -1301,6 +1301,7 @@ MediaItem _mediaItemFromArtifactData(KumihoArtifactData data) {
     kref: data.artifact?.kref.uri ?? data.item.kref.uri,
     revisionKref: data.revision?.kref.uri,
     deprecated: (data.artifact?.deprecated ?? false) || (data.revision?.deprecated ?? false) || data.item.deprecated,
+    isPublished: data.revision?.published ?? false,
     location: data.location,
     // Keep metadata non-null so search/filter logic doesn't thrash on null checks.
     metadata: ItemMetadata(

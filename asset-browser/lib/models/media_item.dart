@@ -20,6 +20,7 @@ class MediaItem {
   final String? location;  // File location path
   final String? revisionKref; // Revision kref for destructive actions
   final bool deprecated;
+  final bool isPublished; // Revision is published (immutable)
   final ItemMetadata? metadata;
 
   const MediaItem({
@@ -38,6 +39,7 @@ class MediaItem {
     this.location,
     this.revisionKref,
     this.deprecated = false,
+    this.isPublished = false,
     this.metadata,
   });
 
@@ -66,6 +68,7 @@ class MediaItem {
     String? location,
     String? revisionKref,
     bool? deprecated,
+    bool? isPublished,
     ItemMetadata? metadata,
   }) {
     return MediaItem(
@@ -84,6 +87,7 @@ class MediaItem {
       location: location ?? this.location,
       revisionKref: revisionKref ?? this.revisionKref,
       deprecated: deprecated ?? this.deprecated,
+      isPublished: isPublished ?? this.isPublished,
       metadata: metadata ?? this.metadata,
     );
   }
@@ -106,6 +110,7 @@ class MediaItem {
       'location': location,
       'revisionKref': revisionKref,
       'deprecated': deprecated,
+      'isPublished': isPublished,
       'metadata': metadata?.toJson(),
     };
   }
@@ -128,7 +133,8 @@ class MediaItem {
       location: json['location'] as String?,
       revisionKref: json['revisionKref'] as String?,
       deprecated: json['deprecated'] as bool? ?? false,
-      metadata: json['metadata'] != null 
+      isPublished: json['isPublished'] as bool? ?? false,
+      metadata: json['metadata'] != null
           ? ItemMetadata.fromJson(json['metadata'] as Map<String, dynamic>)
           : null,
     );

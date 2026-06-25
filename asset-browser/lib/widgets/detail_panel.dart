@@ -12,6 +12,7 @@ import '../models/graph_node.dart';
 import '../providers/auth_provider.dart';
 import '../providers/browser_provider.dart';
 import '../providers/kumiho_provider.dart';
+import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
 import 'lineage_graph_overlay.dart';
 import 'share_dialog.dart';
@@ -167,6 +168,21 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
           _buildLineageSection(context, ref, colors),
       ],
     );
+  }
+
+  Future<void> _addThumbnail(
+      BuildContext context, WidgetRef ref, String revisionKref) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final path = await AssetActions.addThumbnail(ref, revisionKref);
+      if (path != null) {
+        messenger?.showSnackBar(
+            const SnackBar(content: Text('Thumbnail added')));
+      }
+    } catch (e) {
+      messenger?.showSnackBar(
+          SnackBar(content: Text('Failed to add thumbnail: $e')));
+    }
   }
 
   /// Show the lineage graph overlay with real Kumiho data
@@ -416,6 +432,19 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
 
   Widget _buildPreview(BuildContext context, WidgetRef ref, bool isInPlaylist, bool isAuthenticated) {
     final canBrowse = ref.watch(canBrowseProvider);
+    // Offer "Add thumbnail" on a mutable (unpublished) revision that has no
+    // 'thumbnail' artifact yet — mirrors the list view's Artifacts section.
+    final revisionKref = item.revisionKref;
+    bool showAddThumbnail = false;
+    if (canBrowse &&
+        revisionKref != null &&
+        revisionKref.isNotEmpty &&
+        !item.isPublished) {
+      showAddThumbnail = ref.watch(revisionArtifactsProvider(revisionKref)).maybeWhen(
+            data: (artifacts) => !artifacts.any((a) => a.name == 'thumbnail'),
+            orElse: () => false,
+          );
+    }
     final isWindows = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
     final previewLogical = (panelWidth - 32).clamp(0.0, 4096.0);
     final dpr = MediaQuery.of(context).devicePixelRatio;
@@ -532,6 +561,15 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                     tooltip: 'Graph',
                     onTap: () => _showLineageGraph(context, ref),
                   ),
+                // Add thumbnail - on a mutable revision with no thumbnail yet.
+                if (showAddThumbnail) ...[
+                  const SizedBox(width: 4),
+                  _ActionButton(
+                    icon: Icons.add_photo_alternate_outlined,
+                    tooltip: 'Add thumbnail',
+                    onTap: () => _addThumbnail(context, ref, revisionKref!),
+                  ),
+                ],
               ],
             ),
           ),
