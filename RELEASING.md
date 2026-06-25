@@ -7,7 +7,7 @@ this repository.
 
 | App | Workflow | Tag pattern | Platforms |
 |-----|----------|-------------|-----------|
-| Kumiho Browser (`asset-browser`) | `.github/workflows/asset-browser-release.yml` | `asset-browser-v1.2.3` | Windows `.exe`, macOS `.dmg`/`.zip`, Linux `.deb`/`.rpm` |
+| Kumiho Browser (`kumiho-browser`) | `.github/workflows/asset-browser-release.yml` | `asset-browser-v1.2.3` | Windows `.exe`, macOS `.dmg`/`.zip`, Linux `.deb`/`.rpm` |
 | Kumiho Ingest Studio (`ingest-studio`) | `.github/workflows/ingest-studio-release.yml` | `ingest-studio-v0.1.0` | Windows NSIS `.exe`/`.msi`, macOS `.dmg`, Linux `.AppImage`/`.deb` |
 
 ## Cut a release
@@ -50,15 +50,15 @@ Add `WINDOWS_CERT_BASE64` (base64 of your `.pfx`) and `WINDOWS_CERT_PASSWORD`.
 Installers are then Authenticode-signed (removes the SmartScreen "unknown
 publisher" warning).
 
-### macOS signing + notarization (asset-browser)
+### macOS signing + notarization (kumiho-browser)
 Add `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`,
-`APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` (see `asset-browser/docs/apple_certificate.md`).
+`APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` (see `kumiho-browser/docs/apple_certificate.md`).
 
-### asset-browser auto-update
+### kumiho-browser auto-update
 - **Windows / Linux:** the app checks this repo's GitHub Releases at runtime
   (`UpdateService`, owner `KumihoIO`, repo `kumiho-apps`). No setup needed.
 - **macOS (Sparkle):** generate a key with Sparkle's `generate_keys`, put the
-  public key in `asset-browser/macos/Runner/Configs/AppInfo.xcconfig`
+  public key in `kumiho-browser/macos/Runner/Configs/AppInfo.xcconfig`
   (`SPARKLE_PUBLIC_ED25519_KEY`), and add `SPARKLE_ED25519_PRIVATE_KEY` as a
   secret. The feed is served from `releases/latest/download/appcast.xml`.
 

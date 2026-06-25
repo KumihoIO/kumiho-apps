@@ -38,7 +38,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: asset-browser
+        working-directory: kumiho-browser
     env:
       WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
       WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
@@ -109,7 +109,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: asset-browser-windows
-          path: asset-browser/dist/windows/*.exe
+          path: kumiho-browser/dist/windows/*.exe
           retention-days: 14
 
   build-macos:
@@ -117,7 +117,7 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: asset-browser
+        working-directory: kumiho-browser
     env:
       SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
       APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -187,7 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: asset-browser-macos
-          path: asset-browser/dist/macos/
+          path: kumiho-browser/dist/macos/
           retention-days: 14
 
   build-linux:
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-22.04
     defaults:
       run:
-        working-directory: asset-browser
+        working-directory: kumiho-browser
     steps:
       - uses: actions/checkout@v4
 
@@ -240,7 +240,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: asset-browser-linux
-          path: asset-browser/dist/linux/*
+          path: kumiho-browser/dist/linux/*
           retention-days: 14
 
   release:

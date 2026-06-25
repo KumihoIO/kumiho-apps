@@ -22,13 +22,13 @@ This monorepo hosts three independent apps. Each has its own detailed README.
 
 | | App | What it is | Platforms | Docs |
 |:--:|-----|------------|-----------|:----:|
-| 🗂️ | **Kumiho Browser** | Desktop browser for versioned assets & the human-audit UI for Cognitive Memory | Windows · macOS · Linux | [README »](asset-browser/README.md) |
+| 🗂️ | **Kumiho Browser** | Desktop browser for versioned assets & the human-audit UI for Cognitive Memory | Windows · macOS · Linux | [README »](kumiho-browser/README.md) |
 | 📥 | **Kumiho Ingest Studio** | Desktop app that registers local files as Kumiho artifacts via a local Python worker | Windows · macOS · Linux | [README »](ingest/README.md) |
 | 📝 | **Kumiho Blog** | Next.js reference web app for a blog built on the Kumiho API | Web | [README »](blog/README.md) |
 
 ---
 
-### 🗂️ Kumiho Browser &nbsp;·&nbsp; `asset-browser/`
+### 🗂️ Kumiho Browser &nbsp;·&nbsp; `kumiho-browser/`
 
 A Flutter desktop app for browsing and managing versioned creative assets — projects, spaces, items, revisions, and their dependencies — on the Kumiho platform over gRPC. It doubles as the human-facing **audit UI for the Kumiho Cognitive Memory graph**, letting you inspect agent-recorded conversations, decisions, and facts as items with full history and lineage.
 
@@ -38,7 +38,7 @@ A Flutter desktop app for browsing and managing versioned creative assets — pr
 - Connect to Kumiho Cloud **or** a self-hosted Community Edition server (plaintext gRPC on loopback)
 - Bring-your-own-key social sharing, dark/light themes, built-in media playback
 
-**Tech:** Flutter · Dart · gRPC · Riverpod · Firebase Auth &nbsp;—&nbsp; **[Full documentation »](asset-browser/README.md)**
+**Tech:** Flutter · Dart · gRPC · Riverpod · Firebase Auth &nbsp;—&nbsp; **[Full documentation »](kumiho-browser/README.md)**
 
 ---
 
@@ -95,7 +95,7 @@ Building from source and the release process are documented in **[RELEASING.md](
 
 ```
 kumiho-apps/
-├── asset-browser/   # Kumiho Browser  — Flutter desktop
+├── kumiho-browser/   # Kumiho Browser  — Flutter desktop
 ├── ingest/          # Kumiho Ingest Studio — Tauri desktop + Python worker
 ├── blog/            # Kumiho Blog — Next.js web
 ├── install/         # one-line installer scripts
