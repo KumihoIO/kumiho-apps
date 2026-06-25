@@ -9,6 +9,7 @@ import '../providers/browser_provider.dart';
 import '../providers/kumiho_provider.dart';
 import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
+import 'artifact_viewer.dart';
 
 Color _tagAccent(BuildContext context, Color base) {
   if (KumihoTheme.isDarkMode(context)) return base;
@@ -783,7 +784,10 @@ class _ArtifactsSection extends ConsumerWidget {
         Expanded(
           child: revisionKref == null
               ? const _EmptySectionState(message: 'Select a revision')
-              : _ArtifactsList(revisionKref: revisionKref),
+              : _ArtifactsList(
+                  revisionKref: revisionKref,
+                  revisionMutable: revision != null && !revision.isPublished,
+                ),
         ),
       ],
     );
@@ -805,8 +809,9 @@ class _ArtifactsSection extends ConsumerWidget {
 
 class _ArtifactsList extends ConsumerWidget {
   final String revisionKref;
+  final bool revisionMutable;
 
-  const _ArtifactsList({required this.revisionKref});
+  const _ArtifactsList({required this.revisionKref, required this.revisionMutable});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -828,6 +833,7 @@ class _ArtifactsList extends ConsumerWidget {
             return _ArtifactRow(
               artifact: artifact,
               isSelected: isSelected,
+              revisionMutable: revisionMutable,
               onTap: () => notifier.selectArtifact(artifact),
             );
           },
@@ -844,11 +850,13 @@ class _ArtifactsList extends ConsumerWidget {
 class _ArtifactRow extends StatelessWidget {
   final ArtifactListEntry artifact;
   final bool isSelected;
+  final bool revisionMutable;
   final VoidCallback onTap;
 
   const _ArtifactRow({
     required this.artifact,
     required this.isSelected,
+    required this.revisionMutable,
     required this.onTap,
   });
 
@@ -904,6 +912,23 @@ class _ArtifactRow extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            // Open / edit the artifact content.
+            IconButton(
+              onPressed: () => ArtifactViewerDialog.show(
+                context,
+                artifactName: artifact.name,
+                location: artifact.location,
+                revisionMutable: revisionMutable,
+              ),
+              icon: Icon(
+                Icons.open_in_new,
+                size: 14,
+                color: colors.textDimmed.withValues(alpha: 0.7),
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              tooltip: 'Open / edit',
             ),
             // Copy icon - only this triggers copy
             IconButton(

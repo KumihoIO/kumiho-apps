@@ -38,6 +38,8 @@ dependencies:
   # UI Components
   fluent_ui: ^4.9.0  # Windows-style UI
   material_symbols_icons: ^4.2700.0
+  flutter_markdown: ^0.7.4  # Render markdown artifacts in the artifact viewer
+  markdown: ^7.3.1  # GitHub-flavored markdown extension set for the viewer
 
   # File Operations
   file_picker: ^8.0.0

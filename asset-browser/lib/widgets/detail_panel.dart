@@ -14,6 +14,7 @@ import '../providers/browser_provider.dart';
 import '../providers/kumiho_provider.dart';
 import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
+import 'artifact_viewer.dart';
 import 'lineage_graph_overlay.dart';
 import 'share_dialog.dart';
 import 'video_thumbnail.dart';
@@ -445,6 +446,12 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
             orElse: () => false,
           );
     }
+    // Offer "View / edit" for markdown/text artifacts (the in-app editor).
+    final location = item.location;
+    final canOpenText = canBrowse &&
+        location != null &&
+        location.isNotEmpty &&
+        ArtifactViewerDialog.isTextual(location);
     final isWindows = !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
     final previewLogical = (panelWidth - 32).clamp(0.0, 4096.0);
     final dpr = MediaQuery.of(context).devicePixelRatio;
@@ -568,6 +575,20 @@ class _DetailContentState extends ConsumerState<_DetailContent> {
                     icon: Icons.add_photo_alternate_outlined,
                     tooltip: 'Add thumbnail',
                     onTap: () => _addThumbnail(context, ref, revisionKref!),
+                  ),
+                ],
+                // View / edit a markdown or text artifact.
+                if (canOpenText) ...[
+                  const SizedBox(width: 4),
+                  _ActionButton(
+                    icon: Icons.edit_note_outlined,
+                    tooltip: 'View / edit',
+                    onTap: () => ArtifactViewerDialog.show(
+                      context,
+                      artifactName: item.artifactName,
+                      location: location!,
+                      revisionMutable: !item.isPublished,
+                    ),
                   ),
                 ],
               ],
