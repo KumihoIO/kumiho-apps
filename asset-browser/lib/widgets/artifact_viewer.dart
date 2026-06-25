@@ -111,7 +111,7 @@ class _ArtifactViewerDialogState extends State<ArtifactViewerDialog> {
       '.xml', '.html', '.htm', '.css', '.js', '.ts', '.tsx', '.jsx', '.py',
       '.rs', '.go', '.sh', '.bash', '.zsh', '.sql', '.env', '.log', '.c',
       '.cpp', '.h', '.hpp', '.java', '.kt', '.dart', '.rb', '.php', '.lua',
-      '.r', '.cfg', '.conf', '.properties', '.gradle', '.gitignore',
+      '.r', '.cfg', '.conf', '.properties', '.gradle', '.gitignore', '.otio',
     };
     const imageExts = {
       '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif',

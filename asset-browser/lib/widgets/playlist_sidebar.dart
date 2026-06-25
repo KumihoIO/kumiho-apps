@@ -172,6 +172,16 @@ class PlaylistSidebar extends ConsumerWidget {
           ),
         ),
         PopupMenuItem<String>(
+          value: 'export_otio',
+          child: Row(
+            children: [
+              Icon(Icons.movie_outlined, size: 16, color: colors.textSecondary),
+              const SizedBox(width: 8),
+              Text('Export OTIO', style: TextStyle(color: colors.textSecondary)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
           value: 'delete',
           child: Row(
             children: [
@@ -187,10 +197,39 @@ class PlaylistSidebar extends ConsumerWidget {
         _showRenameDialog(context, notifier, playlist);
       } else if (value == 'save_kumiho') {
         _savePlaylistToKumiho(context, ref, playlist);
+      } else if (value == 'export_otio') {
+        _exportPlaylistOtio(context, ref, playlist);
       } else if (value == 'delete') {
         _confirmDeletePlaylist(context, notifier, playlist);
       }
     });
+  }
+
+  Future<void> _exportPlaylistOtio(
+      BuildContext context, WidgetRef ref, Playlist playlist) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final projectName = ref.read(selectedProjectNameProvider);
+    if (projectName == null || projectName.isEmpty) {
+      messenger?.showSnackBar(const SnackBar(
+          content: Text('Select a project first to export the playlist')));
+      return;
+    }
+    if (playlist.items.isEmpty) {
+      messenger?.showSnackBar(
+          const SnackBar(content: Text('Playlist is empty')));
+      return;
+    }
+    messenger?.showSnackBar(SnackBar(
+        content: Text('Exporting "${playlist.name}" as OTIO...'),
+        duration: const Duration(seconds: 1)));
+    try {
+      final path = await AssetActions.exportPlaylistOtio(ref, playlist, projectName);
+      messenger?.showSnackBar(
+          SnackBar(content: Text('Exported OTIO -> $path')));
+    } catch (e) {
+      messenger?.showSnackBar(
+          SnackBar(content: Text('Failed to export OTIO: $e')));
+    }
   }
 
   Future<void> _savePlaylistToKumiho(

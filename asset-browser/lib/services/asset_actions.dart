@@ -2,6 +2,7 @@
 // Copyright (c) 2025 kumihoclouds
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
 import '../providers/kumiho_provider.dart';
+import 'otio_export.dart';
 
 /// Shared mutating actions against the Kumiho server.
 ///
@@ -151,6 +153,58 @@ class AssetActions {
 
     ref.read(kumihoRefreshTriggerProvider.notifier).state++;
     return revKref;
+  }
+
+  /// Records [playlist] into Kumiho (via [savePlaylistToKumiho]), generates an
+  /// OpenTimelineIO timeline from its ordered members, writes it to
+  /// `~/.kumiho/exports/otio/<name>.otio`, and attaches that file to the new
+  /// playlist revision as a `timeline.otio` artifact.
+  ///
+  /// Returns the written `.otio` file path.
+  static Future<String> exportPlaylistOtio(
+      WidgetRef ref, Playlist playlist, String projectName) async {
+    // Record the playlist first (new revision + member edges).
+    final revKref = await savePlaylistToKumiho(ref, playlist, projectName);
+
+    // Build the timeline from members that have a media location.
+    final clips = <OtioClipInput>[];
+    for (final item in playlist.items) {
+      final loc = item.location;
+      if (loc == null || loc.isEmpty) continue;
+      final targetUrl =
+          (loc.startsWith('http://') || loc.startsWith('https://'))
+              ? loc
+              : Uri.file(loc).toString();
+      clips.add(OtioClipInput(
+        name: item.name,
+        targetUrl: targetUrl,
+        metadata: {
+          if (item.revisionKref != null && item.revisionKref!.isNotEmpty)
+            'revision': item.revisionKref!,
+          if (item.kref != null && item.kref!.isNotEmpty) 'artifact': item.kref!,
+        },
+      ));
+    }
+    final otioText = OtioExport.encode(
+        OtioExport.buildTimeline(name: playlist.name, clips: clips));
+
+    // Write to ~/.kumiho/exports/otio/<name>.otio
+    final home = Platform.environment['USERPROFILE'] ??
+        Platform.environment['HOME'] ??
+        '.';
+    final dir = Directory(p.join(home, '.kumiho', 'exports', 'otio'));
+    await dir.create(recursive: true);
+    final file =
+        File(p.join(dir.path, '${krefSafeName(playlist.name)}.otio'));
+    await file.writeAsString(otioText);
+
+    // Attach the .otio file to the playlist revision.
+    final client = await _client(ref);
+    await client.createArtifact(revKref, 'timeline.otio', file.path,
+        metadata: {'contentType': 'application/otio+json'}, existsError: false);
+    ref.invalidate(revisionArtifactsProvider(revKref));
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+    return file.path;
   }
 
   /// Sanitizes [name] into a kref-safe item name (lowercase, alphanumerics and
