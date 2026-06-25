@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kumiho/kumiho.dart';
 import 'package:path/path.dart' as p;
 
+import '../models/models.dart';
 import '../providers/kumiho_provider.dart';
 
 /// Shared mutating actions against the Kumiho server.
@@ -97,6 +98,71 @@ class AssetActions {
     await client.createArtifact(revisionKref, name, location, metadata: metadata);
     ref.invalidate(revisionArtifactsProvider(revisionKref));
     ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Edge type linking a playlist revision to each of its member revisions.
+  static const String playlistMemberEdge = 'PLAYLIST_MEMBER';
+
+  /// Records [playlist] into Kumiho under [projectName]'s `playlists` space as
+  /// an item(kind='playlist') plus a NEW revision (each save is a version), and
+  /// links that revision to every member revision with a [playlistMemberEdge]
+  /// edge carrying the member's order, name, location and artifact kref.
+  ///
+  /// Bundles can't be used (bundle members are item krefs, not revision krefs),
+  /// so the playlist's exact revisions are pinned via edges instead.
+  ///
+  /// Returns the new playlist revision kref.
+  static Future<String> savePlaylistToKumiho(
+      WidgetRef ref, Playlist playlist, String projectName) async {
+    final client = await _client(ref);
+
+    // Ensure the playlists space + the playlist item exist (idempotent).
+    await client.createSpace('/$projectName', 'playlists', existsError: false);
+    final itemName = krefSafeName(playlist.name);
+    final itemResp = await client.createItem(
+        '/$projectName/playlists', itemName, 'playlist', existsError: false);
+    final itemKref = itemResp.kref.uri;
+
+    // A new revision snapshots the current playlist contents.
+    final rev = await client.createRevision(itemKref, metadata: {
+      'name': playlist.name,
+      'item_count': '${playlist.items.length}',
+      if (playlist.description != null && playlist.description!.isNotEmpty)
+        'description': playlist.description!,
+    });
+    final revKref = rev.kref.uri;
+
+    // Pin each member revision in order.
+    var order = 0;
+    for (final item in playlist.items) {
+      final memberRev = item.revisionKref;
+      if (memberRev != null && memberRev.isNotEmpty) {
+        await client.createEdge(revKref, memberRev, playlistMemberEdge, metadata: {
+          'order': '$order',
+          'name': item.name,
+          'type': item.type,
+          if (item.location != null && item.location!.isNotEmpty)
+            'location': item.location!,
+          if (item.kref != null && item.kref!.isNotEmpty) 'artifact': item.kref!,
+        });
+      }
+      order++;
+    }
+
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+    return revKref;
+  }
+
+  /// Sanitizes [name] into a kref-safe item name (lowercase, alphanumerics and
+  /// `-`/`_` only).
+  static String krefSafeName(String name) {
+    final cleaned = name
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '-')
+        .replaceAll(RegExp(r'-+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    return cleaned.isEmpty ? 'playlist' : cleaned;
   }
 
   /// Parses a metadata blob: a JSON object, or `key: value` / `key=value`

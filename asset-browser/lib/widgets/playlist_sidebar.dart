@@ -6,7 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/browser_provider.dart';
+import '../providers/kumiho_provider.dart';
 import '../core/perf/perf_logger.dart';
+import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
 
 const bool _disablePlaylistDnd =
@@ -110,7 +112,7 @@ class PlaylistSidebar extends ConsumerWidget {
                             isSelected: state.selectedPlaylist?.id == playlist.id,
                             onTap: () => notifier.selectPlaylist(playlist),
                             onContextMenu: (position) => _showPlaylistContextMenu(
-                              context, notifier, playlist, position,
+                              context, ref, notifier, playlist, position,
                             ),
                             onDrop: (items) {
                               // Switch to this playlist and add items
@@ -138,6 +140,7 @@ class PlaylistSidebar extends ConsumerWidget {
 
   void _showPlaylistContextMenu(
     BuildContext context,
+    WidgetRef ref,
     BrowserNotifier notifier,
     Playlist playlist,
     Offset position,
@@ -159,6 +162,16 @@ class PlaylistSidebar extends ConsumerWidget {
           ),
         ),
         PopupMenuItem<String>(
+          value: 'save_kumiho',
+          child: Row(
+            children: [
+              Icon(Icons.cloud_upload_outlined, size: 16, color: colors.textSecondary),
+              const SizedBox(width: 8),
+              Text('Save to Kumiho', style: TextStyle(color: colors.textSecondary)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
           value: 'delete',
           child: Row(
             children: [
@@ -172,10 +185,42 @@ class PlaylistSidebar extends ConsumerWidget {
     ).then((value) {
       if (value == 'rename') {
         _showRenameDialog(context, notifier, playlist);
+      } else if (value == 'save_kumiho') {
+        _savePlaylistToKumiho(context, ref, playlist);
       } else if (value == 'delete') {
         _confirmDeletePlaylist(context, notifier, playlist);
       }
     });
+  }
+
+  Future<void> _savePlaylistToKumiho(
+      BuildContext context, WidgetRef ref, Playlist playlist) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final projectName = ref.read(selectedProjectNameProvider);
+    if (projectName == null || projectName.isEmpty) {
+      messenger?.showSnackBar(const SnackBar(
+          content: Text('Select a project first to save the playlist')));
+      return;
+    }
+    if (playlist.items.isEmpty) {
+      messenger?.showSnackBar(
+          const SnackBar(content: Text('Playlist is empty')));
+      return;
+    }
+    messenger?.showSnackBar(SnackBar(
+        content: Text('Saving "${playlist.name}" to Kumiho...'),
+        duration: const Duration(seconds: 1)));
+    try {
+      final pinned =
+          playlist.items.where((i) => (i.revisionKref ?? '').isNotEmpty).length;
+      await AssetActions.savePlaylistToKumiho(ref, playlist, projectName);
+      messenger?.showSnackBar(SnackBar(
+          content: Text('Saved "${playlist.name}" to $projectName/playlists '
+              '($pinned of ${playlist.items.length} items pinned)')));
+    } catch (e) {
+      messenger?.showSnackBar(
+          SnackBar(content: Text('Failed to save playlist: $e')));
+    }
   }
 
   void _showRenameDialog(BuildContext context, BrowserNotifier notifier, Playlist playlist) {
