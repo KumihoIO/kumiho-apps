@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 kumihoclouds
 
+import 'dart:convert';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kumiho/kumiho.dart';
 import 'package:path/path.dart' as p;
 
 import '../providers/kumiho_provider.dart';
@@ -48,6 +51,95 @@ class AssetActions {
     ref.invalidate(revisionArtifactsProvider(revisionKref));
     ref.read(kumihoRefreshTriggerProvider.notifier).state++;
     return path;
+  }
+
+  /// Creates a project. Refreshes the project/grid views on success.
+  static Future<void> createProject(WidgetRef ref, String name,
+      {String? description}) async {
+    final client = await _client(ref);
+    await client.createProject(
+      name,
+      description: (description != null && description.isNotEmpty) ? description : null,
+    );
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Creates a space under [parentPath] (e.g. '/project' or '/project/space').
+  static Future<void> createSpace(
+      WidgetRef ref, String parentPath, String name) async {
+    final client = await _client(ref);
+    await client.createSpace(parentPath, name);
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Creates an item of [kind] under the space at [parentPath].
+  static Future<void> createItem(
+      WidgetRef ref, String parentPath, String name, String kind) async {
+    final client = await _client(ref);
+    await client.createItem(parentPath, name, kind);
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Creates a new (auto-numbered) revision of [itemKref].
+  static Future<void> createRevision(WidgetRef ref, String itemKref,
+      {Map<String, String>? metadata}) async {
+    final client = await _client(ref);
+    await client.createRevision(itemKref, metadata: metadata);
+    ref.invalidate(itemRevisionsProvider(itemKref));
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Creates an artifact named [name] pointing at [location] on [revisionKref].
+  static Future<void> createArtifact(
+      WidgetRef ref, String revisionKref, String name, String location,
+      {Map<String, String>? metadata}) async {
+    final client = await _client(ref);
+    await client.createArtifact(revisionKref, name, location, metadata: metadata);
+    ref.invalidate(revisionArtifactsProvider(revisionKref));
+    ref.read(kumihoRefreshTriggerProvider.notifier).state++;
+  }
+
+  /// Parses a metadata blob: a JSON object, or `key: value` / `key=value`
+  /// lines (blank lines and #comments skipped). Returns null if empty.
+  static Map<String, String>? parseMetadata(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), '$v'));
+      }
+    } catch (_) {
+      // Not JSON — fall through to line parsing.
+    }
+    final result = <String, String>{};
+    for (final raw in const LineSplitter().convert(trimmed)) {
+      final line = raw.trim();
+      if (line.isEmpty || line.startsWith('#')) continue;
+      final colon = line.indexOf(':');
+      final equals = line.indexOf('=');
+      int sep;
+      if (colon == -1) {
+        sep = equals;
+      } else if (equals == -1) {
+        sep = colon;
+      } else {
+        sep = colon < equals ? colon : equals;
+      }
+      if (sep <= 0) continue;
+      final key = line.substring(0, sep).trim();
+      final value = line.substring(sep + 1).trim();
+      if (key.isNotEmpty) result[key] = value;
+    }
+    return result.isEmpty ? null : result;
+  }
+
+  static Future<KumihoClient> _client(WidgetRef ref) async {
+    final client = await ref.read(kumihoClientProvider.future);
+    if (client == null) {
+      throw Exception('Kumiho client unavailable');
+    }
+    return client;
   }
 
   static String _imageMimeForPath(String path) {

@@ -10,6 +10,7 @@ import '../providers/kumiho_provider.dart';
 import '../services/asset_actions.dart';
 import '../theme/kumiho_theme.dart';
 import 'artifact_viewer.dart';
+import 'create_dialog.dart';
 
 Color _tagAccent(BuildContext context, Color base) {
   if (KumihoTheme.isDarkMode(context)) return base;
@@ -303,7 +304,19 @@ class _RevisionsSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader(title: 'Revisions', icon: Icons.history),
+        _SectionHeader(
+          title: 'Revisions',
+          icon: Icons.history,
+          action: _SectionAction(
+            icon: Icons.add,
+            tooltip: 'New revision',
+            onTap: () => CreateDialog.show(
+              context,
+              kind: CreateKind.revision,
+              itemKref: itemKref,
+            ),
+          ),
+        ),
         Expanded(
           child: revisionsAsync.when(
             data: (revisions) {
@@ -760,21 +773,41 @@ class _ArtifactsSection extends ConsumerWidget {
     final revision = selection.selectedRevision;
     final revisionKref = revision?.revisionKref;
 
-    // Offer "Add thumbnail" only on a mutable (unpublished) revision that does
-    // not already have a 'thumbnail' artifact.
+    // On a mutable (unpublished) revision, offer "New artifact" and — when the
+    // revision has no 'thumbnail' yet — "Add thumbnail".
     Widget? action;
     if (revisionKref != null && revision != null && !revision.isPublished) {
+      final actions = <Widget>[
+        _SectionAction(
+          icon: Icons.add,
+          tooltip: 'New artifact',
+          onTap: () => CreateDialog.show(
+            context,
+            kind: CreateKind.artifact,
+            revisionKref: revisionKref,
+          ),
+        ),
+      ];
       final hasThumbnail = ref.watch(revisionArtifactsProvider(revisionKref)).maybeWhen(
             data: (artifacts) => artifacts.any((a) => a.name == 'thumbnail'),
             orElse: () => true,
           );
       if (!hasThumbnail) {
-        action = _SectionAction(
+        actions.add(_SectionAction(
           icon: Icons.add_photo_alternate_outlined,
           tooltip: 'Add thumbnail',
           onTap: () => _addThumbnail(context, ref, revisionKref),
-        );
+        ));
       }
+      action = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (int i = 0; i < actions.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            actions[i],
+          ],
+        ],
+      );
     }
 
     return Column(

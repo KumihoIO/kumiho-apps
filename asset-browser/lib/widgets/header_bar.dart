@@ -10,6 +10,7 @@ import '../providers/browser_provider.dart';
 import '../providers/kumiho_provider.dart';
 import '../providers/settings_provider.dart';
 import '../theme/kumiho_theme.dart';
+import 'create_dialog.dart';
 import 'settings_dialog.dart';
 import 'safe_network_image.dart';
 
@@ -89,6 +90,10 @@ class HeaderBar extends ConsumerWidget {
                         ),
                       ),
               ),
+              if (canBrowse) ...[
+                const SizedBox(width: 8),
+                const _NewMenuButton(),
+              ],
               const SizedBox(width: 8),
               // Refresh button - hide on narrow screens
               if (showRefreshButton) ...[
@@ -542,6 +547,60 @@ class _RestoreSelectionButton extends ConsumerWidget {
         );
       }
     }
+  }
+}
+
+// ==================== NEW (CREATE) MENU ==================== //
+
+/// Toolbar menu for creating a new project, space, or item at the current
+/// project/space location.
+class _NewMenuButton extends ConsumerWidget {
+  const _NewMenuButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = KumihoTheme.of(context);
+    final projectName = ref.watch(selectedProjectNameProvider);
+    final spacePath = ref.watch(selectedSpacePathProvider);
+    final hasProject = projectName != null && projectName.isNotEmpty;
+    final currentPath =
+        hasProject ? '/${[projectName, ...spacePath].join('/')}' : null;
+
+    return PopupMenuButton<String>(
+      tooltip: 'Create',
+      color: colors.surfaceLighter,
+      icon: Icon(Icons.add_circle_outline, size: 18, color: colors.textSecondary),
+      itemBuilder: (context) => [
+        const PopupMenuItem<String>(value: 'project', child: Text('New project')),
+        if (hasProject)
+          const PopupMenuItem<String>(value: 'space', child: Text('New space')),
+        if (hasProject)
+          const PopupMenuItem<String>(value: 'item', child: Text('New item')),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'project':
+            CreateDialog.show(context, kind: CreateKind.project);
+            break;
+          case 'space':
+            CreateDialog.show(
+              context,
+              kind: CreateKind.space,
+              parentPath: currentPath,
+              contextLabel: currentPath,
+            );
+            break;
+          case 'item':
+            CreateDialog.show(
+              context,
+              kind: CreateKind.item,
+              parentPath: currentPath,
+              contextLabel: currentPath,
+            );
+            break;
+        }
+      },
+    );
   }
 }
 
