@@ -43,6 +43,7 @@ class OtioExport {
     return {
       'OTIO_SCHEMA': 'Timeline.1',
       'name': name,
+      'global_start_time': _rationalTime(0),
       'metadata': {
         'kumiho': {'generator': 'kumiho-asset-browser'},
       },
@@ -63,21 +64,28 @@ class OtioExport {
 
   static Map<String, dynamic> _clip(OtioClipInput clip) {
     final durationFrames = (clip.durationSeconds ?? defaultClipSeconds) * rate;
+    // Use Clip.1 (single `media_reference`), the most widely supported form for
+    // importers like DaVinci Resolve — OTIO upgrades it to Clip.2 internally.
+    // The media reference carries an `available_range` so importers know the
+    // media's extent, which is required to place still images.
     return {
-      'OTIO_SCHEMA': 'Clip.2',
+      'OTIO_SCHEMA': 'Clip.1',
       'name': clip.name,
-      'source_range': {
-        'OTIO_SCHEMA': 'TimeRange.1',
-        'start_time': _rationalTime(0),
-        'duration': _rationalTime(durationFrames),
-      },
+      'source_range': _timeRange(durationFrames),
       'media_reference': {
         'OTIO_SCHEMA': 'ExternalReference.1',
         'target_url': clip.targetUrl,
+        'available_range': _timeRange(durationFrames),
         if (clip.metadata.isNotEmpty) 'metadata': {'kumiho': clip.metadata},
       },
     };
   }
+
+  static Map<String, dynamic> _timeRange(num durationFrames) => {
+        'OTIO_SCHEMA': 'TimeRange.1',
+        'start_time': _rationalTime(0),
+        'duration': _rationalTime(durationFrames),
+      };
 
   static Map<String, dynamic> _rationalTime(num value) => {
         'OTIO_SCHEMA': 'RationalTime.1',

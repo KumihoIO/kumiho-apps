@@ -171,10 +171,11 @@ class AssetActions {
     for (final item in playlist.items) {
       final loc = item.location;
       if (loc == null || loc.isEmpty) continue;
-      final targetUrl =
-          (loc.startsWith('http://') || loc.startsWith('https://'))
-              ? loc
-              : Uri.file(loc).toString();
+      // target_url is the media's location as-is: an http(s) URL, or a native
+      // filesystem path. Resolve and most NLEs resolve plain paths from
+      // target_url but NOT file:// URIs, so we deliberately do not wrap local
+      // paths.
+      final targetUrl = loc;
       clips.add(OtioClipInput(
         name: item.name,
         targetUrl: targetUrl,
