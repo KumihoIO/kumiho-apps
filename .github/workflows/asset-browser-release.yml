@@ -5,13 +5,14 @@ name: asset-browser release
 #
 # Trigger: push a tag like `asset-browser-v1.2.3`.
 #
-# Signing is conditional on repo secrets:
+# Signing configuration:
 #   Windows : WINDOWS_CERT_BASE64 + WINDOWS_CERT_PASSWORD  (Authenticode .pfx)
 #   macOS   : APPLE_CERTIFICATE_BASE64 + APPLE_CERTIFICATE_PASSWORD +
 #             APPLE_ID + APPLE_APP_PASSWORD + APPLE_TEAM_ID  (Developer ID + notarization)
 #   Updates : SPARKLE_ED25519_PRIVATE_KEY  (macOS in-app auto-update feed)
-# When a secret is absent the corresponding signing/notarization step is skipped
-# and the artifact is produced unsigned.
+# Tagged macOS releases fail closed when Developer ID or notarization credentials
+# are absent. Manual workflow runs may still produce an unpublished unsigned
+# artifact for development checks.
 
 on:
   push:
@@ -55,7 +56,7 @@ jobs:
       - run: flutter pub get
 
       - name: Extract version from tag
-        if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v')
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^asset-browser-v', ''
@@ -127,8 +128,26 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       MACOS_PROVISIONPROFILE_BASE64: ${{ secrets.MACOS_PROVISIONPROFILE_BASE64 }}
       GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+      REQUIRE_MACOS_SIGNING: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v') && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: macOS release regression checks
+        run: node scripts/test-macos-release-env.cjs
+
+      - name: Validate macOS release credentials
+        run: node scripts/macos/validate_release_env.cjs
+
+      - name: Verify tag matches app version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v')
+        shell: bash
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#asset-browser-v}"
+          APP_VERSION="$(sed -n 's/^version: \([^+]*\).*/\1/p' pubspec.yaml)"
+          test "$TAG_VERSION" = "$APP_VERSION" || {
+            echo "Tag version $TAG_VERSION does not match pubspec version $APP_VERSION" >&2
+            exit 1
+          }
 
       - name: Setup Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
@@ -149,7 +168,7 @@ jobs:
           scripts/macos/build_release.sh
 
       - name: Sign Sparkle update + generate appcast
-        if: startsWith(github.ref, 'refs/tags/asset-browser-v') && env.SPARKLE_ED25519_PRIVATE_KEY != ''
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v') && env.SPARKLE_ED25519_PRIVATE_KEY != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -217,7 +236,7 @@ jobs:
       - run: flutter pub get
 
       - name: Extract version from tag
-        if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v')
         run: |
           VERSION="${GITHUB_REF_NAME#asset-browser-v}"
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Bad tag $GITHUB_REF_NAME" >&2; exit 2; }
@@ -246,7 +265,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [build-windows, build-macos, build-linux]
-    if: startsWith(github.ref, 'refs/tags/asset-browser-v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/asset-browser-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

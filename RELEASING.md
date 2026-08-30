@@ -13,7 +13,7 @@ this repository.
 ## Cut a release
 
 ```bash
-# Kumiho Browser  (version comes from the tag)
+# Kumiho Browser  (first set kumiho-browser/pubspec.yaml to 1.2.3+<build>)
 git tag asset-browser-v1.2.3 && git push origin asset-browser-v1.2.3
 
 # Ingest Studio   (keep src-tauri/tauri.conf.json + Cargo.toml version in sync)
@@ -40,10 +40,11 @@ curl -fsSL https://raw.githubusercontent.com/KumihoIO/kumiho-apps/main/install/i
 Each script finds the latest release whose tag matches the app prefix and
 downloads the right asset for the OS.
 
-## Signing & auto-update (optional, via repo secrets)
+## Signing & auto-update (via repo secrets)
 
-Builds work **unsigned** out of the box; the signing/notarization steps activate
-only when the matching secret is present.
+Manual workflow runs can produce **unsigned, unpublished** artifacts for
+development. A tagged Kumiho Browser release fails closed unless the macOS app
+can be signed with Developer ID and notarized by Apple.
 
 ### Windows code signing (both apps)
 Add `WINDOWS_CERT_BASE64` (base64 of your `.pfx`) and `WINDOWS_CERT_PASSWORD`.
@@ -53,6 +54,10 @@ publisher" warning).
 ### macOS signing + notarization (kumiho-browser)
 Add `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`,
 `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` (see `kumiho-browser/docs/apple_certificate.md`).
+The certificate must contain a **Developer ID Application** identity and its
+private key. A provisioning profile is optional for direct DMG distribution;
+only add `MACOS_PROVISIONPROFILE_BASE64` when the app needs the documented
+Keychain entitlements.
 
 ### kumiho-browser auto-update
 - **Windows / Linux:** the app checks this repo's GitHub Releases at runtime
