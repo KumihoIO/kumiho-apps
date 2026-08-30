@@ -15,13 +15,31 @@ set -euo pipefail
 # - APPLE_ID: Your Apple ID email
 # - APPLE_APP_PASSWORD: App-specific password from appleid.apple.com
 # - APPLE_TEAM_ID: Your Apple Developer Team ID (e.g., M57TZEKD3W)
+# Set REQUIRE_MACOS_SIGNING=1 for any artifact intended for public release.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REQUIRE_MACOS_SIGNING="${REQUIRE_MACOS_SIGNING:-0}"
 APP_NAME="Kumiho Browser"
 BUILD_DIR="$ROOT_DIR/build/macos/Build/Products/Release"
 APP_SRC="$BUILD_DIR/kumiho_asset_browser.app"
 APP_DST="$BUILD_DIR/${APP_NAME}.app"
 OUT_DIR="$ROOT_DIR/dist/macos"
+
+case "$REQUIRE_MACOS_SIGNING" in
+  0|1) ;;
+  *)
+    echo "ERROR: REQUIRE_MACOS_SIGNING must be 0 or 1" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "$REQUIRE_MACOS_SIGNING" == "1" ]]; then
+  command -v node >/dev/null 2>&1 || {
+    echo "ERROR: Node.js is required for the macOS release preflight" >&2
+    exit 1
+  }
+  node "$ROOT_DIR/scripts/macos/validate_release_env.cjs"
+fi
 
 mkdir -p "$OUT_DIR"
 
@@ -74,13 +92,7 @@ if [[ -n "${APPLE_CERTIFICATE_BASE64:-}" && -n "${APPLE_CERTIFICATE_PASSWORD:-}"
   CODESIGN_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.+)"/\1/' || true)
   
   if [[ -z "$CODESIGN_IDENTITY" ]]; then
-    echo "WARNING: No 'Developer ID Application' identity found in certificate"
-    # Try to find any valid identity
-    ANY_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -v "^$" | head -1 | sed -E 's/.*"(.+)"/\1/' || true)
-    if [[ -n "$ANY_IDENTITY" ]]; then
-      echo "Found alternative identity: $ANY_IDENTITY"
-      CODESIGN_IDENTITY="$ANY_IDENTITY"
-    fi
+    echo "WARNING: No 'Developer ID Application' identity found in certificate" >&2
   else
     echo "==> Found signing identity: $CODESIGN_IDENTITY"
   fi
@@ -128,6 +140,11 @@ elif [[ -n "${APPLE_CERTIFICATE_BASE64:-}" ]]; then
   rm -f "$CERT_PATH"
 else
   echo "==> Skipping certificate import (APPLE_CERTIFICATE_BASE64 not set)"
+fi
+
+if [[ "$REQUIRE_MACOS_SIGNING" == "1" && -z "$CODESIGN_IDENTITY" ]]; then
+  echo "ERROR: A Developer ID Application identity is required for a public macOS release" >&2
+  exit 1
 fi
 
 echo "==> Installing pods"
@@ -211,11 +228,45 @@ fi
 # ============ Code Signing ============
 if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != *"0 valid identities"* ]]; then
   echo "==> Codesigning app with: $CODESIGN_IDENTITY"
-  
-  # Sign all nested frameworks and binaries first
-  find "$APP_DST" -type f -perm +111 -o -name "*.dylib" -o -name "*.framework" 2>/dev/null | while read -r item; do
-    codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$item" 2>/dev/null || true
-  done
+
+  sign_nested_code() {
+    local code_path="$1"
+    local signing_args=(
+      --force
+      --options runtime
+      --timestamp
+      --sign "$CODESIGN_IDENTITY"
+    )
+
+    # Sparkle's Downloader.xpc and other vendor-signed helpers can carry
+    # required entitlements. Preserve them when replacing an existing
+    # signature; unsigned frameworks such as Ass.framework take the new
+    # Developer ID signature without this option.
+    if codesign -d "$code_path" >/dev/null 2>&1; then
+      signing_args+=(--preserve-metadata=entitlements)
+    fi
+    codesign "${signing_args[@]}" "$code_path"
+  }
+
+  # Sign every nested Mach-O first, then its containing bundle from the
+  # deepest directory outward. Each object is checked independently so a
+  # missing signature such as v1.0.5's Ass.framework cannot be hidden.
+  echo "==> Signing nested Mach-O binaries"
+  while IFS= read -r -d '' item; do
+    if file -b "$item" | grep -q 'Mach-O'; then
+      sign_nested_code "$item"
+    fi
+  done < <(find "$APP_DST/Contents" -type f -print0)
+
+  echo "==> Signing nested code bundles"
+  while IFS= read -r -d '' item; do
+    sign_nested_code "$item"
+  done < <(
+    find "$APP_DST/Contents" -depth -type d \
+      \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' \
+         -o -name '*.appex' -o -name '*.bundle' -o -name '*.plugin' \) \
+      -print0
+  )
   
   # IMPORTANT (DMG distribution):
   # - We intentionally do NOT use App Sandbox entitlements for Developer ID DMG distribution.
@@ -270,20 +321,59 @@ if [[ -n "${CODESIGN_IDENTITY:-}" && "$CODESIGN_IDENTITY" != *"0 valid identitie
 EOF
 
     echo "==> Signing with minimal Keychain entitlements (profile embedded)"
-    codesign --force --deep --options runtime --timestamp \
+    codesign --force --options runtime --timestamp \
       --entitlements "$ENTITLEMENTS_PATH" \
       --sign "$CODESIGN_IDENTITY" \
       "$APP_DST"
   else
     echo "==> Signing without entitlements (no provisioning profile embedded)"
-    codesign --force --deep --options runtime --timestamp \
+    codesign --force --options runtime --timestamp \
       --sign "$CODESIGN_IDENTITY" \
       "$APP_DST"
   fi
-  
-  codesign --verify --deep --strict --verbose=2 "$APP_DST"
+
+  verify_signed_code() {
+    local code_path="$1"
+    local actual_team
+
+    codesign --verify --strict --verbose=2 "$code_path"
+    actual_team=$(codesign -dv --verbose=4 "$code_path" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+    if [[ -n "${APPLE_TEAM_ID:-}" && "$actual_team" != "$APPLE_TEAM_ID" ]]; then
+      echo "ERROR: Wrong or missing TeamIdentifier for $code_path (found: ${actual_team:-none})" >&2
+      return 1
+    fi
+  }
+
+  verify_app_bundle() {
+    local app_path="$1"
+    local code_path
+
+    codesign --verify --deep --strict --verbose=2 "$app_path"
+    verify_signed_code "$app_path"
+
+    while IFS= read -r -d '' code_path; do
+      verify_signed_code "$code_path"
+    done < <(
+      find "$app_path/Contents" -depth -type d \
+        \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' \
+           -o -name '*.appex' -o -name '*.bundle' -o -name '*.plugin' \) \
+        -print0
+    )
+
+    while IFS= read -r -d '' code_path; do
+      if file -b "$code_path" | grep -q 'Mach-O'; then
+        verify_signed_code "$code_path"
+      fi
+    done < <(find "$app_path/Contents" -type f -print0)
+  }
+
+  verify_app_bundle "$APP_DST"
   echo "==> Code signing complete"
 else
+  if [[ "$REQUIRE_MACOS_SIGNING" == "1" ]]; then
+    echo "ERROR: Refusing to create an unsigned public macOS release" >&2
+    exit 1
+  fi
   echo "==> Skipping codesign (no valid signing identity found)"
   echo "==> NOTE: The app will trigger macOS Gatekeeper warnings without code signing"
 fi
@@ -304,7 +394,17 @@ rm -f "$DMG_PATH"
 DMG_STAGING_DIR="$(mktemp -d)"
 DMG_MOUNT_DIR="$(mktemp -d)"
 DMG_RW_PATH="$OUT_DIR/${APP_NAME}-rw.dmg"
-trap 'rm -rf "$DMG_STAGING_DIR" "$DMG_MOUNT_DIR"; rm -f "$DMG_RW_PATH"' EXIT
+cleanup_dmg_workspace() {
+  if [[ -n "${VERIFY_DEVICE:-}" ]]; then
+    hdiutil detach "$VERIFY_DEVICE" -force -quiet || true
+  fi
+  if [[ -n "${DMG_DEVICE:-}" ]]; then
+    hdiutil detach "$DMG_DEVICE" -force -quiet || true
+  fi
+  rm -rf "$DMG_STAGING_DIR" "$DMG_MOUNT_DIR"
+  rm -f "$DMG_RW_PATH"
+}
+trap cleanup_dmg_workspace EXIT
 
 cp -R "$APP_DST" "$DMG_STAGING_DIR/${APP_NAME}.app"
 ln -s /Applications "$DMG_STAGING_DIR/Applications"
@@ -350,39 +450,73 @@ sleep 1
 
 if [[ -n "${DMG_DEVICE:-}" ]]; then
   hdiutil detach "$DMG_DEVICE" -quiet || hdiutil detach "$DMG_DEVICE" -force -quiet || true
+  DMG_DEVICE=""
 fi
 
 # Convert to compressed DMG for distribution
 hdiutil convert "$DMG_RW_PATH" -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
 
+if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+  echo "==> Signing DMG"
+  codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG_PATH"
+  codesign --verify --strict --verbose=2 "$DMG_PATH"
+fi
+
 # ============ Notarization ============
 if [[ -n "${CODESIGN_IDENTITY:-}" && -n "${APPLE_ID:-}" && -n "${APPLE_APP_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
+  submit_for_notarization() {
+    local artifact_path="$1"
+    local result_path
+    local status
+
+    result_path=$(mktemp)
+    xcrun notarytool submit "$artifact_path" \
+      --apple-id "$APPLE_ID" \
+      --password "$APPLE_APP_PASSWORD" \
+      --team-id "$APPLE_TEAM_ID" \
+      --wait \
+      --output-format json > "$result_path"
+    cat "$result_path"
+    status=$(plutil -extract status raw -o - "$result_path")
+    rm -f "$result_path"
+    if [[ "$status" != "Accepted" ]]; then
+      echo "ERROR: Apple notarization did not accept $artifact_path (status: $status)" >&2
+      return 1
+    fi
+  }
+
   echo "==> Submitting DMG for notarization"
-  
-  # Submit for notarization and wait
-  xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_APP_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait
+  submit_for_notarization "$DMG_PATH"
   
   # Staple the notarization ticket to the DMG
   echo "==> Stapling notarization ticket to DMG"
   xcrun stapler staple "$DMG_PATH"
-  
+  xcrun stapler validate "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG_PATH"
+
   # Also notarize the ZIP for Sparkle updates
   echo "==> Submitting ZIP for notarization"
-  xcrun notarytool submit "$ZIP_PATH" \
-    --apple-id "$APPLE_ID" \
-    --password "$APPLE_APP_PASSWORD" \
-    --team-id "$APPLE_TEAM_ID" \
-    --wait
-  
-  # Staple the ZIP (note: stapling ZIPs doesn't always work, but we try)
-  xcrun stapler staple "$ZIP_PATH" 2>/dev/null || echo "==> Note: Could not staple ZIP (this is normal)"
-  
+  submit_for_notarization "$ZIP_PATH"
+
+  echo "==> Verifying app from the final DMG"
+  VERIFY_DEVICE=$(hdiutil attach -readonly -noverify -noautoopen "$DMG_PATH" \
+    -mountpoint "$DMG_MOUNT_DIR" | awk '/^\/dev\// {print $1; exit}')
+  MOUNTED_APP="$DMG_MOUNT_DIR/${APP_NAME}.app"
+  if [[ -z "${VERIFY_DEVICE:-}" || ! -d "$MOUNTED_APP" ]]; then
+    echo "ERROR: Could not mount the final DMG for verification" >&2
+    exit 1
+  fi
+  verify_app_bundle "$MOUNTED_APP"
+  spctl --assess --type execute --verbose=4 "$MOUNTED_APP"
+  hdiutil detach "$VERIFY_DEVICE" -quiet
+  VERIFY_DEVICE=""
+
   echo "==> Notarization complete"
 else
+  if [[ "$REQUIRE_MACOS_SIGNING" == "1" ]]; then
+    echo "ERROR: Refusing to publish a macOS release without notarization" >&2
+    exit 1
+  fi
   echo "==> Skipping notarization (APPLE_ID, APPLE_APP_PASSWORD, or APPLE_TEAM_ID not set)"
 fi
 

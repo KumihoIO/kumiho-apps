@@ -3,6 +3,14 @@
 All notable changes to **Kumiho Browser** are documented here. Releases are cut
 by pushing an `asset-browser-v<version>` tag (see [RELEASING.md](../RELEASING.md)).
 
+## [1.0.6] — 2026-08-30
+
+### Fixed
+- **macOS releases now require Developer ID signing and Apple notarization.**
+  Every embedded Mach-O and code bundle, including `Ass.framework`, is signed
+  from the inside out and verified again from the final DMG. Tagged releases
+  fail before building when the required Apple credentials are unavailable.
+
 ## [1.0.5] — 2026-06-25
 
 ### Fixed
